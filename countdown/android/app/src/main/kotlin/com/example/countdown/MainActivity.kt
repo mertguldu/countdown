@@ -1,4 +1,4 @@
-package com.example.countdown
+package com.bmg.countdown
 
 import io.flutter.embedding.android.FlutterActivity
 
