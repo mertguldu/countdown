@@ -1,18 +1,23 @@
+// filter_pills.dart
+
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_text_styles.dart';
 import '../../domain/event.dart';
 
 // ── FilterPills ───────────────────────────────────────────────────────────────
 //
-// Renders the Upcoming | Past | All row from the design:
+// Rendered as a floating frosted-glass bar by HomeScreen (Positioned, full width).
 //
-//   ┌─────────────┐
-//   │  Upcoming   │   Past   All
-//   └─────────────┘
-//
-// "Upcoming" uses a filled white pill; "Past" and "All" are plain text tabs.
-// All three are equally tappable and animate between states.
+// Visual layers (outside → in):
+//   Container       → drop shadow (must be outside the clip to be visible)
+//   ClipRRect       → clips to pill shape
+//   BackdropFilter  → blurs content underneath
+//   Container       → translucent fill + hairline border
+//   Row of _Pills   → each pill is Expanded so all three share width equally
 
 class FilterPills extends StatelessWidget {
   const FilterPills({
@@ -24,68 +29,80 @@ class FilterPills extends StatelessWidget {
   final EventFilter selected;
   final ValueChanged<EventFilter> onSelect;
 
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _FilledPill(
-          label: 'Upcoming',
-          selected: selected == EventFilter.upcoming,
-          onTap: () => onSelect(EventFilter.upcoming),
-        ),
-        const SizedBox(width: 4),
-        _PlainPill(
-          label: 'Past',
-          selected: selected == EventFilter.past,
-          onTap: () => onSelect(EventFilter.past),
-        ),
-        const SizedBox(width: 4),
-        _PlainPill(
-          label: 'All',
-          selected: selected == EventFilter.all,
-          onTap: () => onSelect(EventFilter.all),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Filled pill ───────────────────────────────────────────────────────────────
-// White background when selected; transparent (invisible) when not.
-
-class _FilledPill extends StatelessWidget {
-  const _FilledPill({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  static const double _kRadius = 50;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final muted =
-        theme.textTheme.bodyMedium?.color ?? Colors.white.withValues(alpha: 0.5);
 
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(50),
-        ),
-        child: Text(
-          label,
-          style: AppTextStyles.labelLarge.copyWith(
-            color: selected ? Colors.black : muted,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+    return Container(
+      // Shadow lives outside the clip so it isn't masked.
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_kRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 28,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_kRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            // Increased vertical inset for a taller bar profile.
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(_kRadius),
+              border: Border.all(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                width: 1,
+              ),
+            ),
+            // mainAxisSize: max so each Expanded pill claims equal width.
+            child: Row(
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                Expanded(
+                  child: _Pill(
+                    label: 'Upcoming',
+                    selected: selected == EventFilter.upcoming,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onSelect(EventFilter.upcoming);
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Pill(
+                    label: 'Past',
+                    selected: selected == EventFilter.past,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onSelect(EventFilter.past);
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _Pill(
+                    label: 'All',
+                    selected: selected == EventFilter.all,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onSelect(EventFilter.all);
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -93,11 +110,14 @@ class _FilledPill extends StatelessWidget {
   }
 }
 
-// ── Plain text pill ───────────────────────────────────────────────────────────
-// No background — just a text brightness shift between selected / unselected.
+// ── _Pill ─────────────────────────────────────────────────────────────────────
+//
+// StatefulWidget so it owns a press-scale AnimationController.
+// Text is centred within the Expanded cell so all three labels stay optically
+// balanced regardless of character count.
 
-class _PlainPill extends StatelessWidget {
-  const _PlainPill({
+class _Pill extends StatefulWidget {
+  const _Pill({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -108,23 +128,72 @@ class _PlainPill extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_Pill> createState() => _PillState();
+}
+
+class _PillState extends State<_Pill> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 80),
+      reverseDuration: const Duration(milliseconds: 200),
+    );
+    _scale = Tween<double>(begin: 1.0, end: 0.92).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
-    final muted =
-        theme.textTheme.bodyMedium?.color ?? onSurface.withValues(alpha: 0.5);
 
     return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        child: AnimatedDefaultTextStyle(
+      onTap: widget.onTap,
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) => _ctrl.reverse(),
+      onTapCancel: () => _ctrl.reverse(),
+      child: ScaleTransition(
+        scale: _scale,
+        // No Center — AnimatedContainer fills the full Expanded cell (1/3 of
+        // the bar) and centers its text via alignment, so every selected
+        // background is identical in size regardless of label length.
+        child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          style: AppTextStyles.labelLarge.copyWith(
-            color: selected ? onSurface : muted,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+          curve: Curves.easeOut,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+          decoration: BoxDecoration(
+            color: widget.selected ? onSurface : Colors.transparent,
+            borderRadius: BorderRadius.circular(50),
           ),
-          child: Text(label),
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            style: AppTextStyles.labelLarge.copyWith(
+              color: widget.selected
+                  ? theme.colorScheme.surface
+                  : onSurface.withValues(alpha: 0.45),
+              fontWeight:
+                  widget.selected ? FontWeight.w600 : FontWeight.w400,
+            ),
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+            ),
+          ),
         ),
       ),
     );

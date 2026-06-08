@@ -5,35 +5,18 @@ import '../../../../core/database/database.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../providers/events_provider.dart';
 import '../widgets/event_list_item.dart';
-import '../widgets/filter_pills.dart';
 
 class EventsScreen extends ConsumerWidget {
   const EventsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(eventFilterProvider);         // ← eventFilterProvider
     final groupedAsync = ref.watch(groupedEventsProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-          child: FilterPills(
-            selected: filter,
-            onSelect: ref.read(eventFilterProvider.notifier).select, // ← eventFilterProvider
-          ),
-        ),
-        Expanded(
-          child: groupedAsync.when(
-            data: (grouped) => _EventList(grouped: grouped),
-            loading: () =>
-                const Center(child: CircularProgressIndicator.adaptive()),
-            error: (e, _) => _ErrorState(error: e),
-          ),
-        ),
-      ],
+    return groupedAsync.when(
+      data: (grouped) => _EventList(grouped: grouped),
+      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
+      error: (e, _) => _ErrorState(error: e),
     );
   }
 }
