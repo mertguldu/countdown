@@ -2,14 +2,16 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../features/events/domain/event.dart';
+
 part 'database.g.dart';
 
 // Tables are added to this list as features are built.
 // The list in @DriftDatabase and the schemas.dart barrel export must stay
 // in sync — if a table is exported from schemas.dart it must be listed here.
 @DriftDatabase(tables: [
-  // Events and Counter tables will be added here as features are built.
-  // e.g. Events, Counters, DailyCounts
+  Events,
+  // Counters and DailyCounts will be added here as the counter feature is built.
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openDatabase());
