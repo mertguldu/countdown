@@ -29,7 +29,7 @@ class FilterPills extends StatelessWidget {
   final EventFilter selected;
   final ValueChanged<EventFilter> onSelect;
 
-  static const double _kRadius = 50;
+  static const double _kRadius = 20;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +58,7 @@ class FilterPills extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             // Increased vertical inset for a taller bar profile.
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
             decoration: BoxDecoration(
               color: theme.colorScheme.surface.withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(_kRadius),
@@ -166,32 +166,32 @@ class _PillState extends State<_Pill> with SingleTickerProviderStateMixin {
       onTapCancel: () => _ctrl.reverse(),
       child: ScaleTransition(
         scale: _scale,
-        // No Center — AnimatedContainer fills the full Expanded cell (1/3 of
-        // the bar) and centers its text via alignment, so every selected
-        // background is identical in size regardless of label length.
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-          decoration: BoxDecoration(
-            color: widget.selected ? onSurface : Colors.transparent,
-            borderRadius: BorderRadius.circular(50),
-          ),
-          child: AnimatedDefaultTextStyle(
+        // Center so the highlight never stretches to fill the Expanded cell —
+        // every pill's selected background is the same compact shape.
+        child: Center(
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            style: AppTextStyles.labelLarge.copyWith(
-              color: widget.selected
-                  ? theme.colorScheme.surface
-                  : onSurface.withValues(alpha: 0.45),
-              fontWeight:
-                  widget.selected ? FontWeight.w600 : FontWeight.w400,
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+            decoration: BoxDecoration(
+              color: widget.selected ? onSurface : Colors.transparent,
+              borderRadius: BorderRadius.circular(50),
             ),
-            child: Text(
-              widget.label,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.visible,
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
+              style: AppTextStyles.labelLarge.copyWith(
+                color: widget.selected
+                    ? theme.colorScheme.surface
+                    : onSurface.withValues(alpha: 0.45),
+                fontWeight:
+                    widget.selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+              child: Text(
+                widget.label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+              ),
             ),
           ),
         ),

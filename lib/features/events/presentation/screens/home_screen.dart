@@ -24,10 +24,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final PageController _pageController;
 
   // Total height of the floating stack:
-  //   settings (56) + gap (14) + FAB (56) + gap (12) + pills (~46) + 16 bottom gap
+  //   FAB (56) + gap (12) + pills (~46) + 16 bottom gap ≈ 130
   //   Uses viewPadding (stable, unaffected by keyboard) for the safe area inset.
   double get _barClearance =>
-      MediaQuery.of(context).viewPadding.bottom + 200;
+      MediaQuery.of(context).viewPadding.bottom + 130;
 
   @override
   void initState() {
@@ -66,9 +66,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               SafeArea(
                 bottom: false,
-                child: _TabRow(
-                  active: _activeTab,
-                  onSelect: _switchTab,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── Logo + Settings header ───────────────────────────
+                    _Header(
+                      onSettingsTap: () {
+                        HapticFeedback.selectionClick();
+                        // TODO: context.push(AppRoutes.settings)
+                      },
+                    ),
+
+                    // ── Tab row ──────────────────────────────────────────
+                    _TabRow(
+                      active: _activeTab,
+                      onSelect: _switchTab,
+                    ),
+                  ],
                 ),
               ),
 
@@ -100,53 +114,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
 
           // ── Floating bottom stack ──────────────────────────────────────
-          //
-          // max(bottomInset, 24) means:
-          //   iOS     → max(34, 34) = 34 — safe area wins, bar clears home indicator
-          //   Android → max( 0, 34) = 34 — fixed gap wins, bar sits 34 px up
-          // No SafeArea wrapper, no platform branching needed.
           Positioned(
-            bottom: max(mq.viewPadding.bottom, 34),
-            left: 20,
-            right: 20,
+            bottom: max(mq.viewPadding.bottom, 40),
+            left: 0,
+            right: 0,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ── Settings (frosted glass circle) ──────────────────────
-                _GlassCircleButton(
-                  icon: Icons.settings_outlined,
-                  tooltip: 'Settings',
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    // TODO: context.push(AppRoutes.settings)
-                  },
-                ),
-
-                const SizedBox(height: 14),
-
                 // ── FAB (solid, primary action) ───────────────────────────
-                FloatingActionButton(
-                  onPressed: () {
-                    HapticFeedback.mediumImpact();
-                    // TODO: route based on _activeTab
-                    //   events  → context.push(AppRoutes.newEvent)
-                    //   counter → context.push(AppRoutes.newCounter)
-                  },
-                  backgroundColor: theme.colorScheme.onSurface,
-                  foregroundColor: theme.colorScheme.surface,
-                  elevation: 2,
-                  highlightElevation: 4,
-                  shape: const CircleBorder(),
-                  tooltip: 'New',
-                  child: const Icon(Icons.add, size: 26),
+                Padding(
+                  padding: const EdgeInsets.only(right: 30),
+                  child: FloatingActionButton(
+                    onPressed: () {
+                      HapticFeedback.mediumImpact();
+                      // TODO: route based on _activeTab
+                      //   events  → context.push(AppRoutes.newEvent)
+                      //   counter → context.push(AppRoutes.newCounter)
+                    },
+                    backgroundColor: theme.colorScheme.onSurface,
+                    foregroundColor: theme.colorScheme.surface,
+                    elevation: 2,
+                    highlightElevation: 4,
+                    shape: const CircleBorder(),
+                    tooltip: 'New',
+                    child: const Icon(Icons.add, size: 26),
+                  ),
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
 
-                // ── Filter pills (narrower, taller) ──────────────────────
+                // ── Filter pills ──────────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 30),
                   child: FilterPills(
                     selected: ref.watch(eventFilterProvider),
                     onSelect: ref.read(eventFilterProvider.notifier).select,
@@ -161,21 +161,105 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+// ── App header ────────────────────────────────────────────────────────────────
+//
+// Full-width row rendered above the tab strip.
+// Left:  logo placeholder (swap for your real asset when ready).
+// Right: settings icon — bare, no background.
+
+class _Header extends StatelessWidget {
+  const _Header({required this.onSettingsTap});
+
+  final VoidCallback onSettingsTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // ── Logo placeholder ─────────────────────────────────────────
+          const _LogoPlaceholder(),
+
+          const Spacer(),
+
+          // ── Settings (plain icon, no background) ─────────────────────
+          IconButton(
+            onPressed: onSettingsTap,
+            tooltip: 'Settings',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              Icons.settings_outlined,
+              size: 20,
+              color: onSurface.withValues(alpha: 0.45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Logo placeholder ──────────────────────────────────────────────────────────
+//
+// Swap this widget for an Image.asset / SvgPicture when the real logo is ready.
+
+class _LogoPlaceholder extends StatelessWidget {
+  const _LogoPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: onSurface.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: onSurface.withValues(alpha: 0.08),
+          width: 1,
+        ),
+      ),
+      child: Icon(
+        Icons.widgets_outlined,
+        size: 17,
+        color: onSurface.withValues(alpha: 0.35),
+      ),
+    );
+  }
+}
+
 // ── Glass circle button ───────────────────────────────────────────────────────
 //
 // Frosted-glass circle that matches the FilterPills visual language —
 // same blur, same translucent fill, same hairline border.
+//
+// [size] controls the outer diameter; [iconSize] controls the icon inside.
+// Defaults match the original 56 px / 20 px spec so existing call-sites are
+// unaffected if this widget is reused elsewhere.
 
 class _GlassCircleButton extends StatefulWidget {
   const _GlassCircleButton({
     required this.icon,
     required this.onTap,
     this.tooltip = '',
+    this.size = 56,
+    this.iconSize = 20,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final String tooltip;
+  final double size;
+  final double iconSize;
 
   @override
   State<_GlassCircleButton> createState() => _GlassCircleButtonState();
@@ -219,8 +303,8 @@ class _GlassCircleButtonState extends State<_GlassCircleButton>
         child: ScaleTransition(
           scale: _scale,
           child: Container(
-            width: 56,
-            height: 56,
+            width: widget.size,
+            height: widget.size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
@@ -244,13 +328,14 @@ class _GlassCircleButtonState extends State<_GlassCircleButton>
                     shape: BoxShape.circle,
                     color: theme.colorScheme.surface.withValues(alpha: 0.88),
                     border: Border.all(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.08),
                       width: 1,
                     ),
                   ),
                   child: Icon(
                     widget.icon,
-                    size: 20,
+                    size: widget.iconSize,
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
                   ),
                 ),
