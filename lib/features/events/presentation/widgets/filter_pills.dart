@@ -57,8 +57,7 @@ class FilterPills extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            // Increased vertical inset for a taller bar profile.
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             decoration: BoxDecoration(
               color: theme.colorScheme.surface.withValues(alpha: 0.88),
               borderRadius: BorderRadius.circular(_kRadius),
@@ -67,7 +66,6 @@ class FilterPills extends StatelessWidget {
                 width: 1,
               ),
             ),
-            // mainAxisSize: max so each Expanded pill claims equal width.
             child: Row(
               mainAxisSize: MainAxisSize.max,
               children: [
@@ -112,9 +110,13 @@ class FilterPills extends StatelessWidget {
 
 // ── _Pill ─────────────────────────────────────────────────────────────────────
 //
-// StatefulWidget so it owns a press-scale AnimationController.
-// Text is centred within the Expanded cell so all three labels stay optically
-// balanced regardless of character count.
+// The background and text are split into two separate layers inside a Stack:
+//   - Background: fades via AnimatedOpacity (pure opacity, no color interpolation)
+//     and fills the Stack via Positioned.fill so it always matches text height.
+//   - Text: always visible, independently animates color via AnimatedDefaultTextStyle.
+//
+// This avoids the gray flash that occurs when AnimatedContainer interpolates
+// between surface (white) and transparent over a tinted backdrop.
 
 class _Pill extends StatefulWidget {
   const _Pill({
@@ -166,33 +168,56 @@ class _PillState extends State<_Pill> with SingleTickerProviderStateMixin {
       onTapCancel: () => _ctrl.reverse(),
       child: ScaleTransition(
         scale: _scale,
-        // Center so the highlight never stretches to fill the Expanded cell —
-        // every pill's selected background is the same compact shape.
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-            decoration: BoxDecoration(
-              color: widget.selected ? onSurface : Colors.transparent,
-              borderRadius: BorderRadius.circular(50),
-            ),
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: AppTextStyles.labelLarge.copyWith(
-                color: widget.selected
-                    ? theme.colorScheme.surface
-                    : onSurface.withValues(alpha: 0.45),
-                fontWeight:
-                    widget.selected ? FontWeight.w600 : FontWeight.w400,
+        child: SizedBox(
+          width: double.infinity,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Background — stretches to match the text layer height,
+              // fades in/out without ever interpolating its color.
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  opacity: widget.selected ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(15),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.10),
+                          blurRadius: 6,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-              child: Text(
-                widget.label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.visible,
+
+              // Text — drives the Stack height, independently animates color.
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: widget.selected
+                        ? onSurface
+                        : onSurface.withValues(alpha: 0.45),
+                    fontWeight:
+                        widget.selected ? FontWeight.w500 : FontWeight.w400,
+                  ),
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.visible,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
