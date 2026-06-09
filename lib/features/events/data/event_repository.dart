@@ -6,19 +6,11 @@ import '../domain/event.dart';
 
 part 'event_repository.g.dart';
 
-// ── Repository ────────────────────────────────────────────────────────────────
-
 class EventRepository {
   EventRepository(this._db);
 
   final AppDatabase _db;
 
-  // ── Queries ─────────────────────────────────────────────────────────────────
-
-  /// Streams events matching [filter], ordered appropriately for each tab.
-  ///
-  /// Note: [DateTime.now()] is snapshotted at subscription time. The filter
-  /// stays accurate for normal session lengths; no periodic refresh needed.
   Stream<List<Event>> watchFiltered(EventFilter filter) {
     final now = DateTime.now();
     final q = _db.select(_db.events);
@@ -27,22 +19,30 @@ class EventRepository {
       case EventFilter.upcoming:
         q
           ..where((t) => t.targetDate.isBiggerThanValue(now))
-          ..orderBy([(t) => OrderingTerm.asc(t.targetDate)]);
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),    // ← respect manual order
+            (t) => OrderingTerm.asc(t.targetDate),   //   date as tiebreaker
+          ]);
       case EventFilter.past:
         q
           ..where((t) => t.targetDate.isSmallerOrEqualValue(now))
-          ..orderBy([(t) => OrderingTerm.desc(t.targetDate)]);
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),    // ← respect manual order
+            (t) => OrderingTerm.desc(t.targetDate),  //   most recent first as tiebreaker
+          ]);
       case EventFilter.all:
         q.orderBy([
           (t) => OrderingTerm.asc(t.sortOrder),
           (t) => OrderingTerm.asc(t.targetDate),
         ]);
+      case EventFilter.byDateAsc:
+        q.orderBy([(t) => OrderingTerm.asc(t.targetDate)]);
+      case EventFilter.byDateDesc:
+        q.orderBy([(t) => OrderingTerm.desc(t.targetDate)]);
     }
 
     return q.watch();
   }
-
-  // ── Writes ──────────────────────────────────────────────────────────────────
 
   Future<int> insertEvent(EventsCompanion companion) =>
       _db.into(_db.events).insert(companion);
@@ -53,7 +53,6 @@ class EventRepository {
   Future<int> deleteEvent(int id) =>
       (_db.delete(_db.events)..where((t) => t.id.equals(id))).go();
 
-  /// Batch-update sort orders after a drag-reorder gesture.
   Future<void> reorder(List<({int id, int sortOrder})> updates) =>
       _db.batch((batch) {
         for (final u in updates) {
@@ -65,8 +64,6 @@ class EventRepository {
         }
       });
 }
-
-// ── Riverpod provider ─────────────────────────────────────────────────────────
 
 @Riverpod(keepAlive: true)
 EventRepository eventRepository(Ref ref) =>

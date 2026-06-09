@@ -8,17 +8,6 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../domain/event.dart';
 
-// ── FilterPills ───────────────────────────────────────────────────────────────
-//
-// Rendered as a floating frosted-glass bar by HomeScreen (Positioned, full width).
-//
-// Visual layers (outside → in):
-//   Container       → drop shadow (must be outside the clip to be visible)
-//   ClipRRect       → clips to pill shape
-//   BackdropFilter  → blurs content underneath
-//   Container       → translucent fill + hairline border
-//   Row of _Pills   → each pill is Expanded so all three share width equally
-
 class FilterPills extends StatelessWidget {
   const FilterPills({
     super.key,
@@ -31,12 +20,31 @@ class FilterPills extends StatelessWidget {
 
   static const double _kRadius = 20;
 
+  // ── Date-pill helpers ─────────────────────────────────────────────────────
+
+  bool get _dateActive =>
+      selected == EventFilter.byDateAsc || selected == EventFilter.byDateDesc;
+
+  String get _dateLabel {
+    if (selected == EventFilter.byDateAsc) return 'Date ↑';
+    if (selected == EventFilter.byDateDesc) return 'Date ↓';
+    return 'Date';
+  }
+
+  void _onDateTap() {
+    // Toggle direction when already active; select ascending when not.
+    if (selected == EventFilter.byDateAsc) {
+      onSelect(EventFilter.byDateDesc);
+    } else {
+      onSelect(EventFilter.byDateAsc);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Container(
-      // Shadow lives outside the clip so it isn't masked.
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(_kRadius),
         boxShadow: [
@@ -66,36 +74,50 @@ class FilterPills extends StatelessWidget {
                 width: 1,
               ),
             ),
-            // mainAxisSize: MainAxisSize.max removed — it is the Row default.
             child: Row(
               children: [
+                // ── Upcoming ───────────────────────────────────────────────
                 Expanded(
                   child: _Pill(
-                    label: 'Upcoming',
+                    label:    'Upcoming',
                     selected: selected == EventFilter.upcoming,
-                    onTap: () {
+                    onTap:    () {
                       HapticFeedback.selectionClick();
                       onSelect(EventFilter.upcoming);
                     },
                   ),
                 ),
+                // ── Past ───────────────────────────────────────────────────
                 Expanded(
                   child: _Pill(
-                    label: 'Past',
+                    label:    'Past',
                     selected: selected == EventFilter.past,
-                    onTap: () {
+                    onTap:    () {
                       HapticFeedback.selectionClick();
                       onSelect(EventFilter.past);
                     },
                   ),
                 ),
+                // ── All ────────────────────────────────────────────────────
                 Expanded(
                   child: _Pill(
-                    label: 'All',
+                    label:    'All',
                     selected: selected == EventFilter.all,
-                    onTap: () {
+                    onTap:    () {
                       HapticFeedback.selectionClick();
                       onSelect(EventFilter.all);
+                    },
+                  ),
+                ),
+                // ── Date ↑ / Date ↓ ───────────────────────────────────────
+                // Tapping selects byDateAsc; tapping again toggles direction.
+                Expanded(
+                  child: _Pill(
+                    label:    _dateLabel,
+                    selected: _dateActive,
+                    onTap:    () {
+                      HapticFeedback.selectionClick();
+                      _onDateTap();
                     },
                   ),
                 ),
@@ -109,14 +131,6 @@ class FilterPills extends StatelessWidget {
 }
 
 // ── _Pill ─────────────────────────────────────────────────────────────────────
-//
-// The background and text are split into two separate layers inside a Stack:
-//   - Background: fades via AnimatedOpacity (pure opacity, no color interpolation)
-//     and fills the Stack via Positioned.fill so it always matches text height.
-//   - Text: always visible, independently animates color via AnimatedDefaultTextStyle.
-//
-// This avoids the gray flash that occurs when AnimatedContainer interpolates
-// between surface (white) and transparent over a tinted backdrop.
 
 class _Pill extends StatefulWidget {
   const _Pill({
@@ -158,13 +172,13 @@ class _PillState extends State<_Pill> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme     = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
 
     return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) => _ctrl.reverse(),
+      onTap:       widget.onTap,
+      onTapDown:   (_) => _ctrl.forward(),
+      onTapUp:     (_) => _ctrl.reverse(),
       onTapCancel: () => _ctrl.reverse(),
       child: ScaleTransition(
         scale: _scale,
@@ -173,22 +187,21 @@ class _PillState extends State<_Pill> with SingleTickerProviderStateMixin {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Background — stretches to match the text layer height,
-              // fades in/out without ever interpolating its color.
+              // Background — fades in/out without color interpolation
               Positioned.fill(
                 child: AnimatedOpacity(
-                  opacity: widget.selected ? 1.0 : 0.0,
+                  opacity:  widget.selected ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
+                  curve:    Curves.easeOut,
                   child: Container(
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surface,
                       borderRadius: BorderRadius.circular(15),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.10),
+                          color:      Colors.black.withValues(alpha: 0.10),
                           blurRadius: 6,
-                          offset: const Offset(0, 1),
+                          offset:     const Offset(0, 1),
                         ),
                       ],
                     ),
@@ -196,24 +209,25 @@ class _PillState extends State<_Pill> with SingleTickerProviderStateMixin {
                 ),
               ),
 
-              // Text — drives the Stack height, independently animates color.
+              // Label
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 11),
                 child: AnimatedDefaultTextStyle(
                   duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
+                  curve:    Curves.easeOut,
                   style: AppTextStyles.labelLarge.copyWith(
                     color: widget.selected
                         ? onSurface
                         : onSurface.withValues(alpha: 0.45),
-                    fontWeight:
-                        widget.selected ? FontWeight.w500 : FontWeight.w400,
+                    fontWeight: widget.selected
+                        ? FontWeight.w500
+                        : FontWeight.w400,
                   ),
                   child: Text(
                     widget.label,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.visible,
+                    maxLines:  1,
+                    softWrap:  false,
+                    overflow:  TextOverflow.visible,
                   ),
                 ),
               ),

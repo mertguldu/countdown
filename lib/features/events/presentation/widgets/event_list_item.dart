@@ -8,43 +8,53 @@ import 'countdown_display.dart';
 
 // ── EventListItem ─────────────────────────────────────────────────────────────
 //
-// Layout (left → right):
-//   [56×56 tile]  [title / subtitle]  [countdown]  [drag handle]
+// Normal mode layout (left → right):
+//   [56×56 tile]  [title / subtitle]  [countdown]
 //
-// The tile shows the event photo (BoxFit.cover, clipped to rounded rect) when
-// one is saved, otherwise falls back to the category colour tint.
+// Edit mode layout:
+//   [delete btn]  [56×56 tile]  [title / category]  [drag handle]
 
 class EventListItem extends StatelessWidget {
   const EventListItem({
     super.key,
     required this.event,
     this.onTap,
+    this.isEditing = false,
+    this.onDelete,
+    // dragIndex removed
   });
 
   final Event event;
   final VoidCallback? onTap;
+  final bool isEditing;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final theme    = Theme.of(context);
+    final theme     = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
-    final muted    = theme.textTheme.bodyMedium?.color ??
+    final muted     = theme.textTheme.bodyMedium?.color ??
         onSurface.withValues(alpha: 0.5);
-
     final tileColor = Color(event.colorValue);
 
     return InkWell(
-      onTap: onTap,
+      onTap: isEditing ? null : onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
-            // ── Thumbnail tile ─────────────────────────────────────────────
-            _Thumbnail(color: tileColor, photoPath: event.photoPath),
 
+            // ── Delete button (edit mode only) ─────────────────────────────
+            if (isEditing) ...[
+              _DeleteButton(onTap: onDelete),
+              const SizedBox(width: 12),
+            ],
+
+            // ── Thumbnail ──────────────────────────────────────────────────
+            _Thumbnail(color: tileColor, photoPath: event.photoPath),
             const SizedBox(width: 16),
 
-            // ── Title + subtitle ───────────────────────────────────────────
+            // ── Title + subtitle / category ────────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,17 +62,23 @@ class EventListItem extends StatelessWidget {
                 children: [
                   Text(
                     event.title,
-                    style: AppTextStyles.titleMedium
-                        .copyWith(color: onSurface),
+                    style: AppTextStyles.titleMedium.copyWith(color: onSurface),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (event.subtitle case final sub?) ...[
+                  if (isEditing) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      event.category.toUpperCase(),
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: muted, letterSpacing: 1.2,
+                      ),
+                    ),
+                  ] else if (event.subtitle case final sub?) ...[
                     const SizedBox(height: 2),
                     Text(
                       sub,
-                      style:
-                          AppTextStyles.bodyMedium.copyWith(color: muted),
+                      style: AppTextStyles.bodyMedium.copyWith(color: muted),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -73,13 +89,16 @@ class EventListItem extends StatelessWidget {
 
             const SizedBox(width: 12),
 
-            // ── Live countdown ─────────────────────────────────────────────
-            CountdownDisplay(targetDate: event.targetDate),
-
-            const SizedBox(width: 12),
-
-            // ── Drag handle ────────────────────────────────────────────────
-            _DragHandle(color: muted),
+            // ── Countdown (normal) or drag handle decoration (edit) ────────
+            if (!isEditing)
+              CountdownDisplay(targetDate: event.targetDate)
+            else
+              // Pure decoration — ReorderableDelayedDragStartListener in the
+              // parent SliverReorderableList itemBuilder owns the actual drag.
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                child: _DragHandle(color: muted),
+              ),
           ],
         ),
       ),
@@ -87,11 +106,33 @@ class EventListItem extends StatelessWidget {
   }
 }
 
-// ── _Thumbnail ────────────────────────────────────────────────────────────────
+// ── _DeleteButton ─────────────────────────────────────────────────────────────
 //
-// 56×56 rounded rectangle.
-// • If [photoPath] points to a readable file → show photo (BoxFit.cover).
-// • Otherwise → translucent colour tint (original behaviour).
+// iOS-style red circle with a minus icon.
+
+class _DeleteButton extends StatelessWidget {
+  const _DeleteButton({this.onTap});
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 26,
+        height: 26,
+        decoration: const BoxDecoration(
+          color: Color(0xFFE53935),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.remove, color: Colors.white, size: 16),
+      ),
+    );
+  }
+}
+
+// ── _Thumbnail ────────────────────────────────────────────────────────────────
 
 class _Thumbnail extends StatelessWidget {
   const _Thumbnail({required this.color, this.photoPath});
@@ -113,8 +154,6 @@ class _Thumbnail extends StatelessWidget {
           child: Image.file(
             file,
             fit: BoxFit.cover,
-            // Gracefully fall back to colour tile if the file is missing
-            // (e.g. first launch after clearing app data).
             errorBuilder: (_, __, ___) => _colorTile(size, radius),
           ),
         ),
@@ -131,8 +170,6 @@ class _Thumbnail extends StatelessWidget {
           color: color.withValues(alpha: 0.35),
           borderRadius: radius,
         ),
-        // TODO: Replace with CachedNetworkImage / Image.file once image-picker
-        // is added to the new-event flow.
       );
 }
 
@@ -150,7 +187,8 @@ class _DragHandle extends StatelessWidget {
       children: List.generate(
         3,
         (_) => Container(
-          width: 18, height: 1.5,
+          width: 18,
+          height: 1.5,
           decoration: BoxDecoration(
             color: color,
             borderRadius: BorderRadius.circular(1),

@@ -13,6 +13,7 @@ import '../../../../core/theme/app_text_styles.dart';
 import '../../../events/presentation/providers/events_provider.dart';
 import '../../../events/presentation/screens/events_screen.dart';
 import '../widgets/filter_pills.dart';
+import '../../domain/event.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -22,13 +23,14 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  _HomeTab _activeTab = _HomeTab.events;
+  _HomeTab _activeTab  = _HomeTab.events;
+  bool _isEditing      = false;
+
+  // The filter that was active before entering edit mode, so we can restore it.
+  EventFilter? _preEditFilter;
+
   late final PageController _pageController;
 
-  // Height of the floating bottom stack:
-  //   FAB (56) + gap (20) + pills (~46) = ~122 px above the Positioned bottom edge.
-  // The Positioned bottom itself is max(viewPadding.bottom, 40), so total
-  // clearance from the screen bottom is that offset + 122.
   static const double _stackHeight = 122;
 
   @override
@@ -43,9 +45,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.dispose();
   }
 
+  // ── Tab switching ───────────────────────────────────────────────────────────
+
   void _switchTab(_HomeTab tab) {
     if (_activeTab == tab) return;
     HapticFeedback.selectionClick();
+    // Always exit edit mode when switching tabs.
+    if (_isEditing) _exitEditMode();
     setState(() => _activeTab = tab);
     _pageController.animateToPage(
       tab.index,
@@ -53,6 +59,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       curve: Curves.easeInOut,
     );
   }
+
+  // ── Edit mode ───────────────────────────────────────────────────────────────
+
+  void _toggleEdit() {
+    HapticFeedback.selectionClick();
+    if (_isEditing) {
+      _exitEditMode();
+    } else {
+      _enterEditMode();
+    }
+  }
+
+  void _enterEditMode() {
+    _preEditFilter = ref.read(eventFilterProvider);
+    ref.read(eventFilterProvider.notifier).select(EventFilter.all);
+    setState(() => _isEditing = true);
+  }
+
+  void _exitEditMode() {
+    if (_preEditFilter != null) {
+      ref.read(eventFilterProvider.notifier).select(_preEditFilter!);
+      _preEditFilter = null;
+    }
+    setState(() => _isEditing = false);
+  }
+
+  // ── FAB ─────────────────────────────────────────────────────────────────────
 
   void _onFabPressed() {
     HapticFeedback.mediumImpact();
@@ -65,20 +98,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  // ── Build ────────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Single MediaQuery lookup — reused everywhere in this build call.
-    final mq = MediaQuery.of(context);
+    final mq    = MediaQuery.of(context);
 
-    // Mirrors the Positioned(bottom: max(viewPadding.bottom, 40)) offset so the
-    // scroll clearance is always accurate regardless of safe-area height.
     final barClearance = max(mq.viewPadding.bottom, 40.0) + _stackHeight;
 
     return Scaffold(
       body: Stack(
         children: [
-          // ── Main column ────────────────────────────────────────────────
+
+          // ── Main column ───────────────────────────────────────────────────
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -87,42 +120,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // ── Logo + Settings header ───────────────────────────
+
+                    // ── Logo + Edit + Settings ─────────────────────────────
                     _Header(
+                      isEditing:    _isEditing,
+                      showEditButton: _activeTab == _HomeTab.events,
+                      onEditTap:    _toggleEdit,
                       onSettingsTap: () {
                         HapticFeedback.selectionClick();
                         // TODO: context.push(AppRoutes.settings)
                       },
                     ),
 
-                    // ── Tab row ──────────────────────────────────────────
+                    // ── Tab row ────────────────────────────────────────────
                     _TabRow(
-                      active: _activeTab,
+                      active:   _activeTab,
                       onSelect: _switchTab,
                     ),
                   ],
                 ),
               ),
 
-              // ── Page content ─────────────────────────────────────────────
-              // Expand bottom padding via MediaQuery so scroll views inside
-              // each tab automatically clear the floating bottom stack.
+              // ── Page content ───────────────────────────────────────────────
               Expanded(
                 child: MediaQuery(
                   data: mq.copyWith(
-                    padding: mq.padding.copyWith(
-                      bottom: barClearance,
-                    ),
+                    padding: mq.padding.copyWith(bottom: barClearance),
                   ),
                   child: PageView(
                     controller: _pageController,
                     physics: const ClampingScrollPhysics(),
                     onPageChanged: (i) {
                       HapticFeedback.selectionClick();
-                      setState(() => _activeTab = _HomeTab.values[i]);
+                      final newTab = _HomeTab.values[i];
+                      if (_isEditing && newTab != _HomeTab.events) {
+                        _exitEditMode();
+                      }
+                      setState(() => _activeTab = newTab);
                     },
                     children: [
-                      EventsScreen(key: const ValueKey('events')),
+                      EventsScreen(
+                        key:       const ValueKey('events'),
+                        isEditing: _isEditing,
+                      ),
                       _CounterTab(key: const ValueKey('counter')),
                     ],
                   ),
@@ -131,41 +171,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
 
-          // ── Floating bottom stack ──────────────────────────────────────
+          // ── Floating bottom stack (FAB + filter pills) ────────────────────
+          // Fades out and ignores touches while in edit mode.
           Positioned(
             bottom: max(mq.viewPadding.bottom, 40.0),
             left: 0,
             right: 0,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // ── FAB ───────────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.only(right: 30),
-                  child: FloatingActionButton(
-                    onPressed: _onFabPressed,
-                    backgroundColor: theme.colorScheme.onSurface,
-                    foregroundColor: theme.colorScheme.surface,
-                    elevation: 2,
-                    highlightElevation: 4,
-                    shape: const CircleBorder(),
-                    tooltip: 'New',
-                    child: const Icon(Icons.add, size: 26),
-                  ),
-                ),
+            child: IgnorePointer(
+              ignoring: _isEditing,
+              child: AnimatedOpacity(
+                opacity:  _isEditing ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                curve:    Curves.easeOut,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
 
-                const SizedBox(height: 20),
+                    // ── FAB ─────────────────────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.only(right: 30),
+                      child: FloatingActionButton(
+                        onPressed: _onFabPressed,
+                        backgroundColor: theme.colorScheme.onSurface,
+                        foregroundColor: theme.colorScheme.surface,
+                        elevation: 2,
+                        highlightElevation: 4,
+                        shape: const CircleBorder(),
+                        tooltip: 'New',
+                        child: const Icon(Icons.add, size: 26),
+                      ),
+                    ),
 
-                // ── Filter pills ──────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 30),
-                  child: FilterPills(
-                    selected: ref.watch(eventFilterProvider),
-                    onSelect: ref.read(eventFilterProvider.notifier).select,
-                  ),
+                    const SizedBox(height: 20),
+
+                    // ── Filter pills ─────────────────────────────────────────
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 30),
+                      child: FilterPills(
+                        selected: ref.watch(eventFilterProvider),
+                        onSelect: ref.read(eventFilterProvider.notifier).select,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -177,8 +227,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 // ── App header ────────────────────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onSettingsTap});
+  const _Header({
+    required this.isEditing,
+    required this.showEditButton,
+    required this.onEditTap,
+    required this.onSettingsTap,
+  });
 
+  final bool isEditing;
+  final bool showEditButton;
+  final VoidCallback onEditTap;
   final VoidCallback onSettingsTap;
 
   @override
@@ -192,6 +250,36 @@ class _Header extends StatelessWidget {
         children: [
           const _LogoPlaceholder(),
           const Spacer(),
+
+          // ── Edit / Done button ─────────────────────────────────────────────
+          if (showEditButton) ...[
+            GestureDetector(
+              onTap: onEditTap,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: child),
+                  child: Text(
+                    isEditing ? 'Done' : 'Edit',
+                    key: ValueKey(isEditing),
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: isEditing
+                          ? onSurface
+                          : onSurface.withValues(alpha: 0.55),
+                      fontWeight:
+                          isEditing ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+          ],
+
+          // ── Settings ───────────────────────────────────────────────────────
           IconButton(
             onPressed: onSettingsTap,
             tooltip: 'Settings',
@@ -217,7 +305,7 @@ class _LogoPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme    = Theme.of(context);
+    final theme     = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
 
     return Container(
@@ -273,9 +361,9 @@ class _TabRow extends StatelessWidget {
             .map(
               (tab) => Expanded(
                 child: _TabItem(
-                  label: tab.label,
+                  label:    tab.label,
                   selected: active == tab,
-                  onTap: () => onSelect(tab),
+                  onTap:    () => onSelect(tab),
                 ),
               ),
             )
@@ -300,9 +388,9 @@ class _TabItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme    = Theme.of(context);
+    final theme     = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
-    final muted    = theme.textTheme.bodyMedium?.color ??
+    final muted     = theme.textTheme.bodyMedium?.color ??
         onSurface.withValues(alpha: 0.45);
 
     return GestureDetector(

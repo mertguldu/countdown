@@ -8,9 +8,6 @@ import '../../domain/event.dart';
 part 'events_provider.g.dart';
 
 // ── Filter state ──────────────────────────────────────────────────────────────
-// riverpod_generator ^3.0 strips the "Notifier" suffix from the generated
-// provider name. EventFilterNotifier → eventFilterProvider (not
-// eventFilterNotifierProvider). Use eventFilterProvider everywhere.
 
 @riverpod
 class EventFilterNotifier extends _$EventFilterNotifier {
@@ -20,14 +17,12 @@ class EventFilterNotifier extends _$EventFilterNotifier {
   void select(EventFilter filter) => state = filter;
 }
 
-// ── Grouped events stream ─────────────────────────────────────────────────────
-// Manually defined — riverpod_generator cannot resolve the import path for
-// Drift-generated types (Event lives in database.g.dart, a `part` file).
+// ── Grouped events stream (upcoming / past / all) ─────────────────────────────
 
 final groupedEventsProvider =
     StreamProvider.autoDispose<Map<String, List<Event>>>((ref) {
-  final filter = ref.watch(eventFilterProvider); // ← eventFilterProvider, not eventFilterNotifierProvider
-  final repo = ref.watch(eventRepositoryProvider);
+  final filter = ref.watch(eventFilterProvider);
+  final repo   = ref.watch(eventRepositoryProvider);
 
   return repo.watchFiltered(filter).map((events) {
     final grouped = <String, List<Event>>{};
@@ -36,4 +31,22 @@ final groupedEventsProvider =
     }
     return grouped;
   });
+});
+
+// ── Flat events stream — edit mode init ───────────────────────────────────────
+// Always uses EventFilter.all (sortOrder order). Only subscribed while
+// EventsScreen is snapshotting its initial edit-mode state.
+
+final flatEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) {
+  final repo = ref.watch(eventRepositoryProvider);
+  return repo.watchFiltered(EventFilter.all);
+});
+
+// ── Flat chronological stream — Date ↑ / Date ↓ view ─────────────────────────
+// Reacts automatically when the filter toggles between byDateAsc / byDateDesc.
+
+final byDateEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) {
+  final filter = ref.watch(eventFilterProvider);
+  final repo   = ref.watch(eventRepositoryProvider);
+  return repo.watchFiltered(filter);
 });
