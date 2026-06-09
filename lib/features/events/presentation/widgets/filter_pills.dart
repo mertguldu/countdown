@@ -66,8 +66,8 @@ class FilterPills extends StatelessWidget {
                 width: 1,
               ),
             ),
+            // mainAxisSize: MainAxisSize.max removed — it is the Row default.
             child: Row(
-              mainAxisSize: MainAxisSize.max,
               children: [
                 Expanded(
                   child: _Pill(

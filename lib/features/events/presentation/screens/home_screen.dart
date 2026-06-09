@@ -23,11 +23,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   _HomeTab _activeTab = _HomeTab.events;
   late final PageController _pageController;
 
-  // Total height of the floating stack:
-  //   FAB (56) + gap (12) + pills (~46) + 16 bottom gap ≈ 130
-  //   Uses viewPadding (stable, unaffected by keyboard) for the safe area inset.
-  double get _barClearance =>
-      MediaQuery.of(context).viewPadding.bottom + 130;
+  // Height of the floating bottom stack:
+  //   FAB (56) + gap (20) + pills (~46) = ~122 px above the Positioned bottom edge.
+  // The Positioned bottom itself is max(viewPadding.bottom, 40), so total
+  // clearance from the screen bottom is that offset + 122.
+  static const double _stackHeight = 122;
 
   @override
   void initState() {
@@ -55,7 +55,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Single MediaQuery lookup — reused everywhere in this build call.
     final mq = MediaQuery.of(context);
+
+    // Mirrors the Positioned(bottom: max(viewPadding.bottom, 40)) offset so the
+    // scroll clearance is always accurate regardless of safe-area height.
+    final barClearance = max(mq.viewPadding.bottom, 40.0) + _stackHeight;
 
     return Scaffold(
       body: Stack(
@@ -93,7 +98,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: MediaQuery(
                   data: mq.copyWith(
                     padding: mq.padding.copyWith(
-                      bottom: _barClearance,
+                      bottom: barClearance,
                     ),
                   ),
                   child: PageView(
@@ -115,7 +120,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           // ── Floating bottom stack ──────────────────────────────────────
           Positioned(
-            bottom: max(mq.viewPadding.bottom, 40),
+            bottom: max(mq.viewPadding.bottom, 40.0),
             left: 0,
             right: 0,
             child: Column(
@@ -232,117 +237,6 @@ class _LogoPlaceholder extends StatelessWidget {
         Icons.widgets_outlined,
         size: 17,
         color: onSurface.withValues(alpha: 0.35),
-      ),
-    );
-  }
-}
-
-// ── Glass circle button ───────────────────────────────────────────────────────
-//
-// Frosted-glass circle that matches the FilterPills visual language —
-// same blur, same translucent fill, same hairline border.
-//
-// [size] controls the outer diameter; [iconSize] controls the icon inside.
-// Defaults match the original 56 px / 20 px spec so existing call-sites are
-// unaffected if this widget is reused elsewhere.
-
-class _GlassCircleButton extends StatefulWidget {
-  const _GlassCircleButton({
-    required this.icon,
-    required this.onTap,
-    this.tooltip = '',
-    this.size = 56,
-    this.iconSize = 20,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-  final String tooltip;
-  final double size;
-  final double iconSize;
-
-  @override
-  State<_GlassCircleButton> createState() => _GlassCircleButtonState();
-}
-
-class _GlassCircleButtonState extends State<_GlassCircleButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-      reverseDuration: const Duration(milliseconds: 200),
-    );
-    _scale = Tween<double>(begin: 1.0, end: 0.92).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Tooltip(
-      message: widget.tooltip,
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onTapDown: (_) => _ctrl.forward(),
-        onTapUp: (_) => _ctrl.reverse(),
-        onTapCancel: () => _ctrl.reverse(),
-        child: ScaleTransition(
-          scale: _scale,
-          child: Container(
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 28,
-                  offset: const Offset(0, 8),
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ClipOval(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: theme.colorScheme.surface.withValues(alpha: 0.88),
-                    border: Border.all(
-                      color:
-                          theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                      width: 1,
-                    ),
-                  ),
-                  child: Icon(
-                    widget.icon,
-                    size: widget.iconSize,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
