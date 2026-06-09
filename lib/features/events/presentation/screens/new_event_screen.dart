@@ -322,13 +322,18 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
   Future<void> _createEvent() async {
     setState(() => _saving = true);
 
-    // Ask for notification permission before inserting so the timing feels natural
-    await NotificationService.requestPermissions();
+    // 1. Safely ask for permission (catch any platform errors so it doesn't block)
+    try {
+      await NotificationService.requestPermissions();
+    } catch (e) {
+      debugPrint('Notification permission error: $e');
+    }
 
     final name     = _nameCtrl.text.trim().isEmpty ? 'My moment' : _nameCtrl.text.trim();
     final noteText = _noteCtrl.text.trim();
 
     try {
+      // 2. Insert into the database
       final repo    = ref.read(eventRepositoryProvider);
       final eventId = await repo.insertEvent(
         EventsCompanion(
@@ -341,12 +346,27 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
         ),
       );
 
-      await _scheduleNotification(eventId, name);
+      // 3. Safely schedule the notification
+      try {
+        await _scheduleNotification(eventId, name);
+      } catch (notificationError) {
+        // The event was saved, but the alarm permission was likely denied.
+        debugPrint('Failed to schedule notification: $notificationError');
+        
+        // Optional: Let the user know the notification failed but the event is safe.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Event saved, but notifications are disabled.')),
+          );
+        }
+      }
 
+      // 4. Always proceed to the success screen if the DB insert worked
       if (mounted) {
         setState(() { _saving = false; _done = true; _createdName = name; });
       }
     } catch (e) {
+      // This catch block now ONLY handles database insertion failures
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context)
@@ -1235,9 +1255,11 @@ class _DetailField extends StatelessWidget {
 
 class _DashedBorderPainter extends CustomPainter {
   const _DashedBorderPainter({
-    required this.color, required this.strokeWidth, required this.radius,
-    this.dashLength = 5.0, this.gapLength = 4.0,
-  });
+    required this.color,
+    required this.strokeWidth,
+    required this.radius,
+  })  : dashLength = 5.0,
+        gapLength = 4.0;
   final Color color;
   final double strokeWidth, radius, dashLength, gapLength;
 
@@ -1322,7 +1344,6 @@ class _StepReminder extends StatelessWidget {
 
           ...options.map((opt) {
             final isSel  = opt == selected;
-            final isLast = opt == options.last;
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
