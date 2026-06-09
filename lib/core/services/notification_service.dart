@@ -63,7 +63,7 @@ class NotificationService {
     final ios = flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>();
-    final granted = await ios?.requestPermissions(
+    final grantedIos = await ios?.requestPermissions(
       alert: true,
       badge: true,
       sound: true,
@@ -72,9 +72,15 @@ class NotificationService {
     final android = flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
+            
+    // Request standard notification permission
     await android?.requestNotificationsPermission();
+    
+    // Request exact alarm permission (Required for Android 12+)
+    // This will redirect the user to the system settings page if not already granted.
+    await android?.requestExactAlarmsPermission();
 
-    return granted ?? true;
+    return grantedIos ?? true;
   }
 
   // ── Scheduling ─────────────────────────────────────────────────────────────
@@ -105,11 +111,9 @@ class NotificationService {
           presentSound: true,
         ),
       ),
-      // inexactAllowWhileIdle requires no special Android permission and is
-      // perfectly fine for reminders that fire days or weeks before an event.
-      // exactAllowWhileIdle requires SCHEDULE_EXACT_ALARM which Android 12+
-      // devices don't grant automatically, causing a PlatformException.
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      // exactAllowWhileIdle ensures the alarm fires even if the device is dozing
+      // or the app has been fully closed.
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: payload,
     );
   }
