@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/database/database.dart';
@@ -7,9 +9,10 @@ import 'countdown_display.dart';
 // ── EventListItem ─────────────────────────────────────────────────────────────
 //
 // Layout (left → right):
-//   [56×56 colour tile]  [title / subtitle]  [countdown]  [drag handle]
+//   [56×56 tile]  [title / subtitle]  [countdown]  [drag handle]
 //
-// The countdown widget manages its own Timer — this widget is purely stateless.
+// The tile shows the event photo (BoxFit.cover, clipped to rounded rect) when
+// one is saved, otherwise falls back to the category colour tint.
 
 class EventListItem extends StatelessWidget {
   const EventListItem({
@@ -19,18 +22,15 @@ class EventListItem extends StatelessWidget {
   });
 
   final Event event;
-
-  /// Called when the row body is tapped (navigates to event detail).
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme    = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
-    final muted = theme.textTheme.bodyMedium?.color ??
+    final muted    = theme.textTheme.bodyMedium?.color ??
         onSurface.withValues(alpha: 0.5);
 
-    // Reconstruct the Flutter Color from the stored ARGB int.
     final tileColor = Color(event.colorValue);
 
     return InkWell(
@@ -39,8 +39,8 @@ class EventListItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
-            // ── Colour thumbnail ───────────────────────────────────────────
-            _ColorTile(color: tileColor),
+            // ── Thumbnail tile ─────────────────────────────────────────────
+            _Thumbnail(color: tileColor, photoPath: event.photoPath),
 
             const SizedBox(width: 16),
 
@@ -52,9 +52,8 @@ class EventListItem extends StatelessWidget {
                 children: [
                   Text(
                     event.title,
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: onSurface,
-                    ),
+                    style: AppTextStyles.titleMedium
+                        .copyWith(color: onSurface),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -62,7 +61,8 @@ class EventListItem extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       sub,
-                      style: AppTextStyles.bodyMedium.copyWith(color: muted),
+                      style:
+                          AppTextStyles.bodyMedium.copyWith(color: muted),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -87,28 +87,56 @@ class EventListItem extends StatelessWidget {
   }
 }
 
-// ── Private sub-widgets ───────────────────────────────────────────────────────
+// ── _Thumbnail ────────────────────────────────────────────────────────────────
+//
+// 56×56 rounded rectangle.
+// • If [photoPath] points to a readable file → show photo (BoxFit.cover).
+// • Otherwise → translucent colour tint (original behaviour).
 
-class _ColorTile extends StatelessWidget {
-  const _ColorTile({required this.color});
+class _Thumbnail extends StatelessWidget {
+  const _Thumbnail({required this.color, this.photoPath});
+
   final Color color;
+  final String? photoPath;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        // A translucent wash of the category colour keeps thumbnails from
-        // overpowering the dark background while still feeling distinct.
-        color: color.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      // TODO: Replace with CachedNetworkImage / Image.file once image-picker
-      // is added to the new-event flow.
-    );
+    const size   = 56.0;
+    const radius = BorderRadius.all(Radius.circular(12));
+
+    if (photoPath != null && photoPath!.isNotEmpty) {
+      final file = File(photoPath!);
+      return ClipRRect(
+        borderRadius: radius,
+        child: SizedBox(
+          width: size, height: size,
+          child: Image.file(
+            file,
+            fit: BoxFit.cover,
+            // Gracefully fall back to colour tile if the file is missing
+            // (e.g. first launch after clearing app data).
+            errorBuilder: (_, __, ___) => _colorTile(size, radius),
+          ),
+        ),
+      );
+    }
+
+    return _colorTile(size, radius);
   }
+
+  Widget _colorTile(double size, BorderRadius radius) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.35),
+          borderRadius: radius,
+        ),
+        // TODO: Replace with CachedNetworkImage / Image.file once image-picker
+        // is added to the new-event flow.
+      );
 }
+
+// ── _DragHandle ───────────────────────────────────────────────────────────────
 
 class _DragHandle extends StatelessWidget {
   const _DragHandle({required this.color});
@@ -116,15 +144,13 @@ class _DragHandle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Three short horizontal lines (≡), matching the design glyph.
     return Column(
       mainAxisSize: MainAxisSize.min,
       spacing: 4,
       children: List.generate(
         3,
         (_) => Container(
-          width: 18,
-          height: 1.5,
+          width: 18, height: 1.5,
           decoration: BoxDecoration(
             color: color,
             borderRadius: BorderRadius.circular(1),

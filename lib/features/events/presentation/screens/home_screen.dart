@@ -6,7 +6,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../events/presentation/providers/events_provider.dart';
 import '../../../events/presentation/screens/events_screen.dart';
@@ -50,6 +52,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
+  }
+
+  void _onFabPressed() {
+    HapticFeedback.mediumImpact();
+    switch (_activeTab) {
+      case _HomeTab.events:
+        context.push(AppRoutes.newEvent);
+      case _HomeTab.counter:
+        // TODO: context.push(AppRoutes.newCounter)
+        break;
+    }
   }
 
   @override
@@ -127,16 +140,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ── FAB (solid, primary action) ───────────────────────────
+                // ── FAB ───────────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.only(right: 30),
                   child: FloatingActionButton(
-                    onPressed: () {
-                      HapticFeedback.mediumImpact();
-                      // TODO: route based on _activeTab
-                      //   events  → context.push(AppRoutes.newEvent)
-                      //   counter → context.push(AppRoutes.newCounter)
-                    },
+                    onPressed: _onFabPressed,
                     backgroundColor: theme.colorScheme.onSurface,
                     foregroundColor: theme.colorScheme.surface,
                     elevation: 2,
@@ -167,10 +175,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 // ── App header ────────────────────────────────────────────────────────────────
-//
-// Full-width row rendered above the tab strip.
-// Left:  logo placeholder (swap for your real asset when ready).
-// Right: settings icon — bare, no background.
 
 class _Header extends StatelessWidget {
   const _Header({required this.onSettingsTap});
@@ -186,12 +190,8 @@ class _Header extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Logo placeholder ─────────────────────────────────────────
           const _LogoPlaceholder(),
-
           const Spacer(),
-
-          // ── Settings (plain icon, no background) ─────────────────────
           IconButton(
             onPressed: onSettingsTap,
             tooltip: 'Settings',
@@ -211,15 +211,13 @@ class _Header extends StatelessWidget {
 }
 
 // ── Logo placeholder ──────────────────────────────────────────────────────────
-//
-// Swap this widget for an Image.asset / SvgPicture when the real logo is ready.
 
 class _LogoPlaceholder extends StatelessWidget {
   const _LogoPlaceholder();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme    = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
 
     return Container(
@@ -248,7 +246,7 @@ enum _HomeTab { events, counter }
 
 extension _HomeTabX on _HomeTab {
   String get label => switch (this) {
-        _HomeTab.events => 'Events',
+        _HomeTab.events  => 'Events',
         _HomeTab.counter => 'Counter',
       };
 }
@@ -302,10 +300,10 @@ class _TabItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme    = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
-    final muted =
-        theme.textTheme.bodyMedium?.color ?? onSurface.withValues(alpha: 0.45);
+    final muted    = theme.textTheme.bodyMedium?.color ??
+        onSurface.withValues(alpha: 0.45);
 
     return GestureDetector(
       onTap: onTap,

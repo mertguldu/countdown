@@ -21,7 +21,7 @@ dependencies:
 
   # ── Database ──────────────────────────────────────────────────────────────────
   drift: ^2.21.0
-  drift_flutter: ^0.2.1        # Handles SQLite platform setup; no manual sqlite3_flutter_libs needed
+  drift_flutter: ^0.2.1
 
   # ── Monetization ──────────────────────────────────────────────────────────────
   purchases_flutter: ^9.14.0
@@ -32,18 +32,26 @@ dependencies:
 
   # ── Notifications ─────────────────────────────────────────────────────────────
   flutter_local_notifications: ^22.0.0
-  timezone: ^0.11.0            # Required for zonedSchedule() — must match flutter_local_notifications
-  flutter_timezone: ^5.1.0     # Gets the device's IANA timezone string at runtime
+  timezone: ^0.11.0
+  flutter_timezone: ^5.1.0
+
+  # ── Media ─────────────────────────────────────────────────────────────────────
+  # image_picker: picking photos from the device library.
+  # Platform setup required:
+  #   iOS  → add NSPhotoLibraryUsageDescription to ios/Runner/Info.plist
+  #   Android 13+ → no extra manifest entry needed (image_picker ≥ 0.8.6)
+  image_picker: ^1.1.0
+  path_provider: ^2.1.0   # getApplicationDocumentsDirectory() for persisting event photos
 
   # ── UI Utilities ──────────────────────────────────────────────────────────────
-  gap: ^3.0.1                  # Spacing inside Row/Column (replaces SizedBox clutter)
-  google_fonts: ^6.2.1         # Used for any system font beyond Fraunces
+  gap: ^3.0.1
+  google_fonts: ^6.2.1
 
   # ── Data Utilities ────────────────────────────────────────────────────────────
-  shared_preferences: ^2.3.3   # Onboarding completed flag, lightweight settings
-  intl: ^0.20.0                # Date & number formatting
-  uuid: ^4.5.1                 # Generates unique IDs for events
-  path: ^1.9.1                 # File path construction for the Drift DB
+  shared_preferences: ^2.3.3
+  intl: ^0.20.0
+  uuid: ^4.5.1
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:
@@ -53,22 +61,19 @@ dev_dependencies:
 
   # ── Code Generation ───────────────────────────────────────────────────────────
   build_runner: ^2.4.13
-  riverpod_generator: ^3.0.0   # Generates providers from @riverpod annotations
-  drift_dev: ^2.21.0           # Generates Drift table & query code
+  riverpod_generator: ^3.0.0
+  drift_dev: ^2.21.0
 
   # ── Linting ───────────────────────────────────────────────────────────────────
   custom_lint: ^0.8.1
-  riverpod_lint: ^3.0.0        # Riverpod-aware lint rules (missing .autoDispose, etc.)
+  riverpod_lint: ^3.0.0
 
 flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/           # Illustrations, onboarding graphics, category icons
+    - assets/images/
 
-  # Fraunces is used for large countdown numbers (FrauncesNumber widget).
-  # Download the weights you need from fonts.google.com and place them in fonts/.
-  # Recommended: 300 (Light), 400 (Regular), 700 (Bold)
   fonts:
     - family: Fraunces
       fonts:

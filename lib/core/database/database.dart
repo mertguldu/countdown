@@ -17,18 +17,19 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openDatabase());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
-  // Migration strategy: bump schemaVersion and add a MigrationStrategy here
-  // before any release that changes the schema.
-  // @override
-  // MigrationStrategy get migration => MigrationStrategy(
-  //   onUpgrade: (migrator, from, to) async { ... },
-  // );
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (migrator, from, to) async {
+      // v1 → v2: add photoPath column to events table.
+      if (from < 2) {
+        await migrator.addColumn(events, events.photoPath);
+      }
+    },
+  );
 
   static QueryExecutor _openDatabase() {
-    // drift_flutter picks the right SQLite implementation per platform
-    // and stores the file in the app's documents directory.
     return driftDatabase(name: 'countdown_db');
   }
 }
@@ -36,7 +37,6 @@ class AppDatabase extends _$AppDatabase {
 @Riverpod(keepAlive: true)
 AppDatabase appDatabase(Ref ref) {
   final db = AppDatabase();
-  // Closes the database connection cleanly if the provider is ever disposed.
   ref.onDispose(db.close);
   return db;
 }

@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/events/presentation/screens/home_screen.dart';
+import '../../features/events/presentation/screens/new_event_screen.dart';
 
 part 'app_router.g.dart';
 
@@ -45,10 +46,17 @@ GoRouter appRouter(Ref ref) {
       ),
 
       // ── Events ──────────────────────────────────────────────────────────
+
+      // New event: slides up as a full-screen modal sheet.
       GoRoute(
         path: AppRoutes.newEvent,
-        builder: (context, state) => const _StubScreen('New Event'),
+        pageBuilder: (context, state) => MaterialPage(
+          fullscreenDialog: true,
+          key: state.pageKey,
+          child: const NewEventScreen(),
+        ),
       ),
+
       GoRoute(
         path: AppRoutes.eventDetail,
         builder: (context, state) {
