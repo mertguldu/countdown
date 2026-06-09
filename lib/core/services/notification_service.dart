@@ -4,13 +4,9 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-// Top-level plugin instance — required by flutter_local_notifications.
-// Must not be inside a class.
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
-// Top-level callback — must be outside the class and annotated so the
-// Dart compiler does not tree-shake it (called from native code).
 @pragma('vm:entry-point')
 void onNotificationTap(NotificationResponse response) {
   // TODO: Use response.payload to deep-link into the relevant event.
@@ -32,7 +28,7 @@ class NotificationService {
     tz.initializeTimeZones();
     final timeZoneInfo = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(timeZoneInfo.identifier));
-    
+
     const initSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: DarwinInitializationSettings(
@@ -109,7 +105,11 @@ class NotificationService {
           presentSound: true,
         ),
       ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      // inexactAllowWhileIdle requires no special Android permission and is
+      // perfectly fine for reminders that fire days or weeks before an event.
+      // exactAllowWhileIdle requires SCHEDULE_EXACT_ALARM which Android 12+
+      // devices don't grant automatically, causing a PlatformException.
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       payload: payload,
     );
   }

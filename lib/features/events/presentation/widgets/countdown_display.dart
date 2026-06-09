@@ -110,7 +110,7 @@ class _CountdownDisplayState extends State<CountdownDisplay> {
 
     // ── Normal: day count + compact time ticker ───────────────────────────────
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start, // left-align both rows
+      crossAxisAlignment: CrossAxisAlignment.end, // align both rows
       mainAxisSize: MainAxisSize.min,
       children: [
         // Day count with bottom-aligned "DAYS" label
