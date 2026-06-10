@@ -28,6 +28,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   // Ordered list of groups; each group holds its ordered items.
   List<({String category, List<Event> events})> _groups = [];
+  List<Event> _allEvents = [];
   bool _editInitialized = false;
   ProviderSubscription<AsyncValue<List<Event>>>? _flatSub;
 
@@ -84,14 +85,17 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     setState(() {
       _editInitialized = false;
       _groups = [];
+      _allEvents       = [];
     });
   }
 
   void _initFromEvents(List<Event> events) {
+    _allEvents = events;                // ← store everything
+
     final now = DateTime.now();
     final map = <String, List<Event>>{};
     for (final e in events) {
-      if (e.targetDate.isAfter(now)) {          // ← skip finished events
+      if (e.targetDate.isAfter(now)) {
         (map[e.category] ??= []).add(e);
       }
     }
@@ -138,13 +142,42 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   // ── Persist order to DB ───────────────────────────────────────────────────
 
   void _saveOrder(List<({String category, List<Event> events})> groups) {
+    final now = DateTime.now();
+
+    // Past events keyed by category, in their original relative order.
+    final pastByCategory = <String, List<Event>>{};
+    for (final e in _allEvents) {
+      if (!e.targetDate.isAfter(now)) {
+        (pastByCategory[e.category] ??= []).add(e);
+      }
+    }
+
     final updates = <({int id, int sortOrder})>[];
     var order = 0;
+
     for (final g in groups) {
+      // Upcoming events for this group first.
       for (final e in g.events) {
         updates.add((id: e.id, sortOrder: order++));
       }
+      // Past events for the same category — tucked after upcoming ones
+      // so the group zone is contiguous and the category header sorts correctly.
+      for (final e in pastByCategory[g.category] ?? const []) {
+        updates.add((id: e.id, sortOrder: order++));
+      }
     }
+
+    // Categories that have ONLY past events (not visible in edit mode)
+    // are appended at the end so they don't pollute the manual ordering.
+    final covered = groups.map((g) => g.category).toSet();
+    for (final entry in pastByCategory.entries) {
+      if (!covered.contains(entry.key)) {
+        for (final e in entry.value) {
+          updates.add((id: e.id, sortOrder: order++));
+        }
+      }
+    }
+
     ref.read(eventRepositoryProvider).reorder(updates); // fire-and-forget
   }
 
@@ -178,6 +211,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
     // Optimistically remove from local state.
     setState(() {
+      _allEvents = _allEvents.where((e) => e.id != event.id).toList();
       _groups = _groups
           .map((g) => (
                 category: g.category,
