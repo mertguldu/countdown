@@ -18,7 +18,7 @@ enum EditTab { active, finished }
 extension EditTabX on EditTab {
   String get label => switch (this) {
         EditTab.active   => 'Active',
-        EditTab.finished => 'Finished',
+        EditTab.finished => 'Inactive',
       };
 }
 

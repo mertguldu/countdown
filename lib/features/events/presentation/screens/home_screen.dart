@@ -431,32 +431,8 @@ class _Header extends StatelessWidget {
         children: [
           const _LogoPlaceholder(),
           const Spacer(),
-          if (showEditButton) ...[
-            GestureDetector(
-              onTap: onEditTap,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  transitionBuilder: (child, anim) =>
-                      FadeTransition(opacity: anim, child: child),
-                  child: Text(
-                    isEditing ? 'Done' : 'Edit',
-                    key: ValueKey(isEditing),
-                    style: AppTextStyles.labelLarge.copyWith(
-                      color: isEditing
-                          ? onSurface
-                          : onSurface.withValues(alpha: 0.55),
-                      fontWeight:
-                          isEditing ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 2),
-          ],
+
+          // ── Settings ─────────────────────────────────────────────────────
           IconButton(
             onPressed: onSettingsTap,
             tooltip: 'Settings',
@@ -464,10 +440,38 @@ class _Header extends StatelessWidget {
             constraints: const BoxConstraints(),
             visualDensity: VisualDensity.compact,
             icon: Icon(
-              Icons.settings_outlined, size: 20,
+              Icons.settings_outlined,
+              size: 20,
               color: onSurface.withValues(alpha: 0.45),
             ),
           ),
+
+          // ── Edit (pencil) ─────────────────────────────────────────────────
+          if (showEditButton) ...[
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: onEditTap,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (child, anim) =>
+                      FadeTransition(opacity: anim, child: child),
+                  child: Icon(
+                    isEditing
+                        ? Icons.edit               // filled when active
+                        : Icons.edit_outlined,     // outline at rest
+                    key: ValueKey(isEditing),
+                    size: 20,
+                    color: isEditing
+                        ? onSurface
+                        : onSurface.withValues(alpha: 0.45),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
