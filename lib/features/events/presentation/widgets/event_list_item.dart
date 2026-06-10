@@ -6,27 +6,20 @@ import '../../../../core/database/database.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import 'countdown_display.dart';
 
-// ── EventListItem ─────────────────────────────────────────────────────────────
-//
-// Normal mode layout (left → right):
-//   [56×56 tile]  [title / subtitle]  [countdown]
-//
-// Edit mode layout:
-//   [delete btn]  [56×56 tile]  [title / category]  [drag handle]
-
 class EventListItem extends StatelessWidget {
   const EventListItem({
     super.key,
     required this.event,
     this.onTap,
-    this.isEditing = false,
+    this.isEditing   = false,
+    this.isDraggable = false,   // true only for active-tab items in edit mode
     this.onDelete,
-    // dragIndex removed
   });
 
   final Event event;
   final VoidCallback? onTap;
   final bool isEditing;
+  final bool isDraggable;
   final VoidCallback? onDelete;
 
   @override
@@ -89,16 +82,17 @@ class EventListItem extends StatelessWidget {
 
             const SizedBox(width: 12),
 
-            // ── Countdown (normal) or drag handle decoration (edit) ────────
-            if (!isEditing)
-              CountdownDisplay(targetDate: event.targetDate)
-            else
-              // Pure decoration — ReorderableDelayedDragStartListener in the
-              // parent SliverReorderableList itemBuilder owns the actual drag.
+            // ── Right side ─────────────────────────────────────────────────
+            // Drag handle only when the item is actively draggable.
+            // Everything else (normal mode, finished-tab edit mode) shows
+            // the countdown — which naturally reads "Finished" for past events.
+            if (isEditing && isDraggable)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                 child: _DragHandle(color: muted),
-              ),
+              )
+            else
+              CountdownDisplay(targetDate: event.targetDate),
           ],
         ),
       ),
@@ -107,8 +101,6 @@ class EventListItem extends StatelessWidget {
 }
 
 // ── _DeleteButton ─────────────────────────────────────────────────────────────
-//
-// iOS-style red circle with a minus icon.
 
 class _DeleteButton extends StatelessWidget {
   const _DeleteButton({this.onTap});
@@ -120,8 +112,7 @@ class _DeleteButton extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        width: 26,
-        height: 26,
+        width: 26, height: 26,
         decoration: const BoxDecoration(
           color: Color(0xFFE53935),
           shape: BoxShape.circle,
@@ -136,7 +127,6 @@ class _DeleteButton extends StatelessWidget {
 
 class _Thumbnail extends StatelessWidget {
   const _Thumbnail({required this.color, this.photoPath});
-
   final Color color;
   final String? photoPath;
 
@@ -146,26 +136,23 @@ class _Thumbnail extends StatelessWidget {
     const radius = BorderRadius.all(Radius.circular(12));
 
     if (photoPath != null && photoPath!.isNotEmpty) {
-      final file = File(photoPath!);
       return ClipRRect(
         borderRadius: radius,
         child: SizedBox(
           width: size, height: size,
           child: Image.file(
-            file,
+            File(photoPath!),
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => _colorTile(size, radius),
           ),
         ),
       );
     }
-
     return _colorTile(size, radius);
   }
 
   Widget _colorTile(double size, BorderRadius radius) => Container(
-        width: size,
-        height: size,
+        width: size, height: size,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.35),
           borderRadius: radius,
@@ -187,8 +174,7 @@ class _DragHandle extends StatelessWidget {
       children: List.generate(
         3,
         (_) => Container(
-          width: 18,
-          height: 1.5,
+          width: 18, height: 1.5,
           decoration: BoxDecoration(
             color: color,
             borderRadius: BorderRadius.circular(1),

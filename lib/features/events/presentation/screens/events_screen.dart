@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/database/database.dart';
 import '../../../../core/services/notification_service.dart';
@@ -11,12 +10,29 @@ import '../../domain/event.dart';
 import '../providers/events_provider.dart';
 import '../widgets/event_list_item.dart';
 
+// ── Edit tab ──────────────────────────────────────────────────────────────────
+// Public so HomeScreen can use it for the floating tab bar.
+
+enum EditTab { active, finished }
+
+extension EditTabX on EditTab {
+  String get label => switch (this) {
+        EditTab.active   => 'Active',
+        EditTab.finished => 'Finished',
+      };
+}
+
 // ── EventsScreen ──────────────────────────────────────────────────────────────
 
 class EventsScreen extends ConsumerStatefulWidget {
-  const EventsScreen({super.key, this.isEditing = false});
+  const EventsScreen({
+    super.key,
+    this.isEditing = false,
+    this.editTab   = EditTab.active,
+  });
 
   final bool isEditing;
+  final EditTab editTab;
 
   @override
   ConsumerState<EventsScreen> createState() => _EventsScreenState();
@@ -26,9 +42,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   // ── Edit-mode local state ─────────────────────────────────────────────────
 
-  // Ordered list of groups; each group holds its ordered items.
   List<({String category, List<Event> events})> _groups = [];
-  List<Event> _allEvents = [];
+  List<Event> _allEvents      = [];
+  List<Event> _finishedEvents = [];
   bool _editInitialized = false;
   ProviderSubscription<AsyncValue<List<Event>>>? _flatSub;
 
@@ -53,11 +69,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     super.dispose();
   }
 
-  // ── Edit-mode initialisation ──────────────────────────────────────────────
+  // ── Edit init ─────────────────────────────────────────────────────────────
 
   void _scheduleEditInit() {
-    // addPostFrameCallback ensures setState is safe even when called from
-    // initState before the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _flatSub?.close();
@@ -84,33 +98,40 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     _flatSub = null;
     setState(() {
       _editInitialized = false;
-      _groups = [];
+      _groups          = [];
       _allEvents       = [];
+      _finishedEvents  = [];
     });
   }
 
   void _initFromEvents(List<Event> events) {
-    _allEvents = events;                // ← store everything
+    _allEvents = events;
 
-    final now = DateTime.now();
-    final map = <String, List<Event>>{};
+    final now      = DateTime.now();
+    final activeMap = <String, List<Event>>{};
+    final finished  = <Event>[];
+
     for (final e in events) {
       if (e.targetDate.isAfter(now)) {
-        (map[e.category] ??= []).add(e);
+        (activeMap[e.category] ??= []).add(e);
+      } else {
+        finished.add(e);
       }
     }
-    _groups = map.entries
-        .map((entry) => (category: entry.key, events: [...entry.value]))
+
+    _groups         = activeMap.entries
+        .map((e) => (category: e.key, events: [...e.value]))
         .toList();
+    _finishedEvents = finished;
   }
 
-  // ── Group reorder (↑ / ↓ buttons) ────────────────────────────────────────
+  // ── Group reorder ─────────────────────────────────────────────────────────
 
   void _moveGroupUp(int gi) {
     if (gi == 0) return;
     HapticFeedback.selectionClick();
     final list = [..._groups];
-    final g = list.removeAt(gi);
+    final g    = list.removeAt(gi);
     list.insert(gi - 1, g);
     setState(() => _groups = list);
     _saveOrder(list);
@@ -120,13 +141,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     if (gi >= _groups.length - 1) return;
     HapticFeedback.selectionClick();
     final list = [..._groups];
-    final g = list.removeAt(gi);
+    final g    = list.removeAt(gi);
     list.insert(gi + 1, g);
     setState(() => _groups = list);
     _saveOrder(list);
   }
 
-  // ── Item reorder (drag within group) ─────────────────────────────────────
+  // ── Item reorder ──────────────────────────────────────────────────────────
 
   void _reorderItem(int gi, int oldIdx, int newIdx) {
     if (newIdx > oldIdx) newIdx--;
@@ -139,13 +160,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     _saveOrder(list);
   }
 
-  // ── Persist order to DB ───────────────────────────────────────────────────
+  // ── Persist order ─────────────────────────────────────────────────────────
 
   void _saveOrder(List<({String category, List<Event> events})> groups) {
-    final now = DateTime.now();
-
-    // Past events keyed by category, in their original relative order.
-    final pastByCategory = <String, List<Event>>{};
+    final now             = DateTime.now();
+    final pastByCategory  = <String, List<Event>>{};
     for (final e in _allEvents) {
       if (!e.targetDate.isAfter(now)) {
         (pastByCategory[e.category] ??= []).add(e);
@@ -156,19 +175,14 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     var order = 0;
 
     for (final g in groups) {
-      // Upcoming events for this group first.
       for (final e in g.events) {
         updates.add((id: e.id, sortOrder: order++));
       }
-      // Past events for the same category — tucked after upcoming ones
-      // so the group zone is contiguous and the category header sorts correctly.
       for (final e in pastByCategory[g.category] ?? const []) {
         updates.add((id: e.id, sortOrder: order++));
       }
     }
 
-    // Categories that have ONLY past events (not visible in edit mode)
-    // are appended at the end so they don't pollute the manual ordering.
     final covered = groups.map((g) => g.category).toSet();
     for (final entry in pastByCategory.entries) {
       if (!covered.contains(entry.key)) {
@@ -178,7 +192,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       }
     }
 
-    ref.read(eventRepositoryProvider).reorder(updates); // fire-and-forget
+    ref.read(eventRepositoryProvider).reorder(updates);
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
@@ -209,10 +223,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    // Optimistically remove from local state.
     setState(() {
-      _allEvents = _allEvents.where((e) => e.id != event.id).toList();
-      _groups = _groups
+      _allEvents      = _allEvents.where((e) => e.id != event.id).toList();
+      _finishedEvents = _finishedEvents.where((e) => e.id != event.id).toList();
+      _groups         = _groups
           .map((g) => (
                 category: g.category,
                 events: g.events.where((e) => e.id != event.id).toList(),
@@ -237,18 +251,33 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     // ── Edit mode ────────────────────────────────────────────────────────────
     if (widget.isEditing) {
       if (!_editInitialized) {
         return const Center(child: CircularProgressIndicator.adaptive());
       }
-      if (_groups.isEmpty) return const _EmptyState();
-      return _GroupedEditView(
-        groups:        _groups,
-        onMoveGroupUp:   _moveGroupUp,
-        onMoveGroupDown: _moveGroupDown,
-        onReorderItem:   _reorderItem,
-        onDelete:        _onDelete,
+
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        transitionBuilder: (child, anim) =>
+            FadeTransition(opacity: anim, child: child),
+        child: widget.editTab == EditTab.finished
+            ? _FinishedEditView(
+                key:      const ValueKey('finished_view'),
+                events:   _finishedEvents,
+                onDelete: _onDelete,
+              )
+            : (_groups.isEmpty
+                ? const _EmptyState(key: ValueKey('empty_active'))
+                : _GroupedEditView(
+                    key:             const ValueKey('active_view'),
+                    groups:          _groups,
+                    onMoveGroupUp:   _moveGroupUp,
+                    onMoveGroupDown: _moveGroupDown,
+                    onReorderItem:   _reorderItem,
+                    onDelete:        _onDelete,
+                  )),
       );
     }
 
@@ -269,7 +298,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     // ── Normal grouped view ──────────────────────────────────────────────────
     final groupedAsync = ref.watch(groupedEventsProvider);
     return groupedAsync.when(
-      data: (grouped) => _EventList(grouped: grouped),
+      data:    (grouped) => _EventList(grouped: grouped),
       loading: () =>
           const Center(child: CircularProgressIndicator.adaptive()),
       error: (e, _) => _ErrorState(error: e),
@@ -278,13 +307,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 }
 
 // ── _GroupedEditView ──────────────────────────────────────────────────────────
-//
-// One SliverReorderableList per category group.
-// Items can only be dragged within their own sliver — no cross-group movement.
-// Groups are reordered via ↑ / ↓ arrow buttons on the group header.
 
 class _GroupedEditView extends StatelessWidget {
   const _GroupedEditView({
+    super.key,
     required this.groups,
     required this.onMoveGroupUp,
     required this.onMoveGroupDown,
@@ -300,17 +326,12 @@ class _GroupedEditView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Build the sliver list imperatively so we can capture a fresh `gi`
-    // and `g` per iteration. Dart's C-style for loops share the loop
-    // variable across iterations, so collection-literal for loops would
-    // give every closure gi == groups.length by the time they fire.
     final slivers = <Widget>[];
 
     for (int gi = 0; gi < groups.length; gi++) {
-      final capturedGi = gi;          // ← fresh final per iteration
-      final g          = groups[gi];  // ← fresh final per iteration
+      final capturedGi = gi;
+      final g          = groups[gi];
 
-      // ── Group header with ↑ / ↓ controls ──────────────────────────────
       slivers.add(SliverToBoxAdapter(
         child: _EditGroupHeader(
           key:         ValueKey('hdr_${g.category}'),
@@ -322,30 +343,28 @@ class _GroupedEditView extends StatelessWidget {
         ),
       ));
 
-      // ── Reorderable items for this group ───────────────────────────────
       slivers.add(SliverReorderableList(
         key:       ValueKey('srl_${g.category}'),
         itemCount: g.events.length,
         onReorder: (o, n) => onReorderItem(capturedGi, o, n),
         itemBuilder: (context, ii) {
           final event = g.events[ii];
-          return ReorderableDelayedDragStartListener(   // ← long-press anywhere on row
+          return ReorderableDelayedDragStartListener(
             key:   ValueKey(event.id),
             index: ii,
             child: Material(
               color: Colors.transparent,
               child: EventListItem(
-                event:     event,
-                isEditing: true,
-                onDelete:  () => onDelete(event),
-                // dragIndex removed — drag is owned by the wrapper above
+                event:       event,
+                isEditing:   true,
+                isDraggable: true,    // ← active items show drag handle
+                onDelete:    () => onDelete(event),
               ),
             ),
           );
         },
       ));
 
-      // ── Divider between groups ─────────────────────────────────────────
       if (capturedGi < groups.length - 1) {
         slivers.add(const SliverToBoxAdapter(
           child: Padding(
@@ -357,7 +376,6 @@ class _GroupedEditView extends StatelessWidget {
     }
 
     slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 100)));
-
     return CustomScrollView(slivers: slivers);
   }
 }
@@ -392,21 +410,17 @@ class _EditGroupHeader extends StatelessWidget {
           Text(
             category.toUpperCase(),
             style: AppTextStyles.labelSmall.copyWith(
-              color:        muted,
-              letterSpacing: 1.6,
-              fontWeight:   FontWeight.w600,
+              color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w600,
             ),
           ),
           const Spacer(),
           _GroupMoveButton(
-            icon:    Icons.keyboard_arrow_up_rounded,
-            enabled: canMoveUp,
-            onTap:   onMoveUp,
+            icon: Icons.keyboard_arrow_up_rounded,
+            enabled: canMoveUp, onTap: onMoveUp,
           ),
           _GroupMoveButton(
-            icon:    Icons.keyboard_arrow_down_rounded,
-            enabled: canMoveDown,
-            onTap:   onMoveDown,
+            icon: Icons.keyboard_arrow_down_rounded,
+            enabled: canMoveDown, onTap: onMoveDown,
           ),
         ],
       ),
@@ -434,25 +448,102 @@ class _GroupMoveButton extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Icon(
-          icon,
-          size: 22,
-          color: enabled
-              ? onSurface
-              : onSurface.withValues(alpha: 0.2),
+          icon, size: 22,
+          color: enabled ? onSurface : onSurface.withValues(alpha: 0.2),
         ),
       ),
     );
   }
 }
 
-// ── _FlatDateList ─────────────────────────────────────────────────────────────
+// ── _FinishedEditView ─────────────────────────────────────────────────────────
 //
-// Read-only flat list used for byDateAsc / byDateDesc modes.
-// No grouping, no drag handles — just events in chronological order.
+// Shows past events grouped by category. Delete only — no drag reordering.
+// EventListItem with isEditing:true, isDraggable:false shows the delete button
+// on the left and the "Finished" countdown label on the right.
+
+class _FinishedEditView extends StatelessWidget {
+  const _FinishedEditView({
+    super.key,
+    required this.events,
+    required this.onDelete,
+  });
+
+  final List<Event> events;
+  final Future<void> Function(Event) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (events.isEmpty) {
+      final muted = Theme.of(context).textTheme.bodyMedium?.color;
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.check_circle_outline_rounded,
+              size: 40,
+              color: muted?.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No finished events',
+              style: AppTextStyles.bodyMedium.copyWith(color: muted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Group by category, preserving encounter order (events come
+    // from _allEvents which is in sortOrder order).
+    final map = <String, List<Event>>{};
+    for (final e in events) {
+      (map[e.category] ??= []).add(e);
+    }
+
+    final slivers = <Widget>[];
+    var first = true;
+
+    for (final entry in map.entries) {
+      if (!first) {
+        slivers.add(const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: _RowDivider(),
+          ),
+        ));
+      }
+      first = false;
+
+      slivers.add(SliverToBoxAdapter(
+        child: _CategoryHeader(entry.key),
+      ));
+
+      slivers.add(SliverList.builder(
+        itemCount: entry.value.length,
+        itemBuilder: (context, ii) {
+          final event = entry.value[ii];
+          return EventListItem(
+            key:       ValueKey('fin_${event.id}'),
+            event:     event,
+            isEditing: true,
+            // isDraggable defaults to false → shows countdown ("Finished")
+            onDelete:  () => onDelete(event),
+          );
+        },
+      ));
+    }
+
+    slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 100)));
+    return CustomScrollView(slivers: slivers);
+  }
+}
+
+// ── _FlatDateList ─────────────────────────────────────────────────────────────
 
 class _FlatDateList extends StatelessWidget {
   const _FlatDateList({required this.events});
-
   final List<Event> events;
 
   @override
@@ -463,9 +554,7 @@ class _FlatDateList extends StatelessWidget {
       separatorBuilder: (_, __) => const _RowDivider(),
       itemBuilder: (context, index) => EventListItem(
         event: events[index],
-        onTap: () {
-          // TODO: context.push(AppRoutes.eventDetailPath(events[index].id.toString()))
-        },
+        onTap: () {},
       ),
     );
   }
@@ -475,7 +564,6 @@ class _FlatDateList extends StatelessWidget {
 
 class _EventList extends StatelessWidget {
   const _EventList({required this.grouped});
-
   final Map<String, List<Event>> grouped;
 
   @override
@@ -485,9 +573,7 @@ class _EventList extends StatelessWidget {
     final items = <_ListItem>[];
     for (final entry in grouped.entries) {
       items.add(_SectionItem(entry.key));
-      for (final event in entry.value) {
-        items.add(_EventItem(event));
-      }
+      for (final event in entry.value) items.add(_EventItem(event));
     }
 
     return ListView.separated(
@@ -507,9 +593,7 @@ class _EventList extends StatelessWidget {
           _SectionItem(:final category) => _CategoryHeader(category),
           _EventItem(:final event) => EventListItem(
               event: event,
-              onTap: () {
-                // TODO: context.push(AppRoutes.eventDetailPath(event.id.toString()))
-              },
+              onTap: () {},
             ),
         };
       },
@@ -517,21 +601,17 @@ class _EventList extends StatelessWidget {
   }
 }
 
-// ── Sealed list-item types ────────────────────────────────────────────────────
-
 sealed class _ListItem {}
-
 final class _SectionItem extends _ListItem {
   _SectionItem(this.category);
   final String category;
 }
-
 final class _EventItem extends _ListItem {
   _EventItem(this.event);
   final Event event;
 }
 
-// ── Category header ───────────────────────────────────────────────────────────
+// ── Section header ────────────────────────────────────────────────────────────
 
 class _CategoryHeader extends StatelessWidget {
   const _CategoryHeader(this.category);
@@ -545,16 +625,14 @@ class _CategoryHeader extends StatelessWidget {
       child: Text(
         category.toUpperCase(),
         style: AppTextStyles.labelSmall.copyWith(
-          color:        muted,
-          letterSpacing: 1.6,
-          fontWeight:   FontWeight.w600,
+          color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 }
 
-// ── Shared divider ────────────────────────────────────────────────────────────
+// ── Divider ───────────────────────────────────────────────────────────────────
 
 class _RowDivider extends StatelessWidget {
   const _RowDivider();
@@ -563,17 +641,16 @@ class _RowDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     final muted = Theme.of(context).textTheme.bodyMedium?.color;
     return Divider(
-      height: 1,
-      thickness: 0.5,
+      height: 1, thickness: 0.5,
       color: muted?.withValues(alpha: 0.2),
     );
   }
 }
 
-// ── Empty / error states ──────────────────────────────────────────────────────
+// ── Empty / error ─────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({super.key});
 
   @override
   Widget build(BuildContext context) {

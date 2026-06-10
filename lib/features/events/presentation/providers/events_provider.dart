@@ -26,6 +26,27 @@ final groupedEventsProvider =
 
   return repo.watchFiltered(filter).map((events) {
     final grouped = <String, List<Event>>{};
+
+    if (filter == EventFilter.all) {
+      final now      = DateTime.now();
+      final active   = events.where((e) => e.targetDate.isAfter(now));
+      final finished = events.where((e) => !e.targetDate.isAfter(now));
+
+      // Pass 1: active events in sortOrder order → establishes category order.
+      for (final e in active) {
+        grouped.putIfAbsent(e.category, () => []).add(e);
+      }
+      // Pass 2: finished events appended after active ones in the same
+      // category group, or added as a new group at the very end if the
+      // whole category is finished.
+      for (final e in finished) {
+        grouped.putIfAbsent(e.category, () => []).add(e);
+      }
+
+      return grouped;
+    }
+
+    // All other filters — unchanged behaviour.
     for (final event in events) {
       grouped.putIfAbsent(event.category, () => []).add(event);
     }
