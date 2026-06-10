@@ -26,17 +26,16 @@ class FilterPills extends StatelessWidget {
       selected == EventFilter.byDateAsc || selected == EventFilter.byDateDesc;
 
   String get _dateLabel {
-    if (selected == EventFilter.byDateAsc) return 'Date ↑';
-    if (selected == EventFilter.byDateDesc) return 'Date ↓';
-    return 'Date';
+    if (selected == EventFilter.byDateAsc) return 'Timeline ↑';
+    if (selected == EventFilter.byDateDesc) return 'Timeline ↓';
+    return 'Timeline';
   }
 
   void _onDateTap() {
-    // Toggle direction when already active; select ascending when not.
-    if (selected == EventFilter.byDateAsc) {
-      onSelect(EventFilter.byDateDesc);
-    } else {
+    if (selected == EventFilter.byDateDesc) {
       onSelect(EventFilter.byDateAsc);
+    } else {
+      onSelect(EventFilter.byDateDesc); 
     }
   }
 
