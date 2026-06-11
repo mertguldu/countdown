@@ -19,7 +19,7 @@ class EventRepository {
   Stream<List<Event>> watchFiltered(EventFilter filter) {
     final now = DateTime.now();
     final q   = _db.select(_db.events);
-    final isCountdown = (Events t) =>
+    Expression<bool> isCountdown(Events t) =>
         t.eventType.equals(EventType.countdown.name);
 
     switch (filter) {
@@ -72,7 +72,7 @@ class EventRepository {
   Stream<List<Event>> watchCountUpFiltered(CountUpFilter filter) {
     final now      = DateTime.now();
     final q        = _db.select(_db.events);
-    final isCountup = (Events t) => t.eventType.equals(EventType.countup.name);
+    Expression<bool> isCountup(Events t) => t.eventType.equals(EventType.countup.name);
 
     switch (filter) {
       case CountUpFilter.running:

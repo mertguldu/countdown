@@ -321,7 +321,7 @@ class _FlatTallyList extends StatelessWidget {
   Widget build(BuildContext context) => ListView.separated(
     padding: const EdgeInsets.only(top: 8, bottom: 120),
     itemCount: events.length,
-    separatorBuilder: (_, __) => const _Divider(),
+    separatorBuilder: (_, _) => const _Divider(),
     itemBuilder: (ctx, i) => TallyListItem(
       event:       events[i],
       onIncrement: () => onIncrement(events[i].id),
@@ -347,7 +347,7 @@ class _FlatTallyEditView extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 120),
       itemCount: events.length,
-      separatorBuilder: (_, __) => const _Divider(),
+      separatorBuilder: (_, _) => const _Divider(),
       itemBuilder: (ctx, i) => TallyListItem(
         event:     events[i],
         isEditing: true,
@@ -395,7 +395,7 @@ class _GroupedEditView extends StatelessWidget {
       slivers.add(SliverReorderableList(
         key:       ValueKey('srl_${g.category}'),
         itemCount: g.events.length,
-        onReorder: (o, n) => onReorderItem(capturedGi, o, n),
+        onReorderItem: (o, n) => onReorderItem(capturedGi, o, n),
         itemBuilder: (ctx, ii) {
           final event = g.events[ii];
           return ReorderableDelayedDragStartListener(

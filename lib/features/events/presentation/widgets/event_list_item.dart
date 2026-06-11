@@ -126,7 +126,7 @@ class _EventThumbnail extends StatelessWidget {
           width: size, height: size,
           fit: BoxFit.cover,
           // Fall back to the colour swatch if the file is missing.
-          errorBuilder: (_, __, ___) => _ColorSwatch(
+          errorBuilder: (_, _, _) => _ColorSwatch(
             color: color, size: size, radius: radius),
         ),
       );

@@ -381,7 +381,7 @@ class _GroupedEditView extends StatelessWidget {
       slivers.add(SliverReorderableList(
         key:       ValueKey('srl_${g.category}'),
         itemCount: g.events.length,
-        onReorder: (o, n) => onReorderItem(capturedGi, o, n),
+        onReorderItem: (o, n) => onReorderItem(capturedGi, o, n),
         itemBuilder: (ctx, ii) {
           final event = g.events[ii];
           return ReorderableDelayedDragStartListener(
@@ -435,7 +435,7 @@ class _FinishedEditView extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.only(top: 8, bottom: 120),
       itemCount: events.length,
-      separatorBuilder: (_, __) => const _Divider(),
+      separatorBuilder: (_, _) => const _Divider(),
       itemBuilder: (ctx, i) => EventListItem(
         event:     events[i],
         isEditing: true,

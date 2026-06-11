@@ -47,7 +47,7 @@ class StepDetails extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                         child: Image.file(
                           File(imagePath!), width: 44, height: 44, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             width: 44, height: 44,
                             decoration: BoxDecoration(color: onSurf.withValues(alpha: 0.07), borderRadius: BorderRadius.circular(8)),
                             child: Icon(Icons.broken_image_outlined, size: 18, color: muted),

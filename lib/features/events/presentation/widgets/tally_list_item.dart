@@ -192,7 +192,7 @@ class _Thumbnail extends StatelessWidget {
           File(photoPath!),
           width: size, height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _swatch(size, radius),
+          errorBuilder: (_, _, _) => _swatch(size, radius),
         ),
       );
     }
