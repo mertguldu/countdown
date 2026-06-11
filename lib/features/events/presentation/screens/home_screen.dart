@@ -650,10 +650,10 @@ enum _HomeTab { events, countUp, tally }
 
 extension _HomeTabX on _HomeTab {
   String get label => switch (this) {
-        _HomeTab.events  => 'Events',
-        _HomeTab.countUp => 'Count Up',
-        _HomeTab.tally   => 'Tally',
-      };
+    _HomeTab.events  => 'Countdown',
+    _HomeTab.countUp => 'Countup',
+    _HomeTab.tally   => 'Counter',
+  };
 }
 
 extension EditTabX on EditTab {
