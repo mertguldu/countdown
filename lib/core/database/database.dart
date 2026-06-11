@@ -6,32 +6,31 @@ import '../../features/events/domain/event.dart';
 
 part 'database.g.dart';
 
-// Tables are added to this list as features are built.
-// The list in @DriftDatabase and the schemas.dart barrel export must stay
-// in sync — if a table is exported from schemas.dart it must be listed here.
-@DriftDatabase(tables: [
-  Events,
-  // Counters and DailyCounts will be added here as the counter feature is built.
-])
+@DriftDatabase(tables: [Events])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openDatabase());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onUpgrade: (migrator, from, to) async {
-      // v1 → v2: add photoPath column to events table.
       if (from < 2) {
+        // v1 → v2: add photoPath
         await migrator.addColumn(events, events.photoPath);
+      }
+      if (from < 3) {
+        // v2 → v3: targetDate is now nullable; add eventType, tallyCount,
+        // resetPeriod, lastResetAt.
+        await migrator.deleteTable('events');
+        await migrator.createTable(events);
       }
     },
   );
 
-  static QueryExecutor _openDatabase() {
-    return driftDatabase(name: 'countdown_db');
-  }
+  static QueryExecutor _openDatabase() =>
+      driftDatabase(name: 'countdown_db');
 }
 
 @Riverpod(keepAlive: true)

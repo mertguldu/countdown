@@ -1,11 +1,8 @@
-// filter_pills.dart
-
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/theme/app_text_styles.dart';
 import '../../domain/event.dart';
 
 class FilterPills extends StatelessWidget {
@@ -20,25 +17,6 @@ class FilterPills extends StatelessWidget {
 
   static const double _kRadius = 20;
 
-  // ── Date-pill helpers ─────────────────────────────────────────────────────
-
-  bool get _dateActive =>
-      selected == EventFilter.byDateAsc || selected == EventFilter.byDateDesc;
-
-  String get _dateLabel {
-    if (selected == EventFilter.byDateAsc) return 'Timeline ↑';
-    if (selected == EventFilter.byDateDesc) return 'Timeline ↓';
-    return 'Timeline';
-  }
-
-  void _onDateTap() {
-    if (selected == EventFilter.byDateDesc) {
-      onSelect(EventFilter.byDateAsc);
-    } else {
-      onSelect(EventFilter.byDateDesc); 
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -48,14 +26,12 @@ class FilterPills extends StatelessWidget {
         borderRadius: BorderRadius.circular(_kRadius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 28,
-            offset: const Offset(0, 8),
+            color:      Colors.black.withValues(alpha: 0.12),
+            blurRadius: 28, offset: const Offset(0, 8),
           ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color:      Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8, offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -73,51 +49,39 @@ class FilterPills extends StatelessWidget {
                 width: 1,
               ),
             ),
+            // No mainAxisSize: MainAxisSize.min — let the Row fill its parent
+            // so the bar spans the full width of the Padding(horizontal: 30).
             child: Row(
               children: [
-                // ── Upcoming ───────────────────────────────────────────────
                 Expanded(
                   child: _Pill(
                     label:    'Upcoming',
                     selected: selected == EventFilter.upcoming,
-                    onTap:    () {
-                      HapticFeedback.selectionClick();
-                      onSelect(EventFilter.upcoming);
-                    },
+                    onTap:    () => _pick(EventFilter.upcoming),
                   ),
                 ),
-                // ── Past ───────────────────────────────────────────────────
                 Expanded(
                   child: _Pill(
                     label:    'Past',
                     selected: selected == EventFilter.past,
-                    onTap:    () {
-                      HapticFeedback.selectionClick();
-                      onSelect(EventFilter.past);
-                    },
+                    onTap:    () => _pick(EventFilter.past),
                   ),
                 ),
-                // ── All ────────────────────────────────────────────────────
                 Expanded(
                   child: _Pill(
                     label:    'All',
                     selected: selected == EventFilter.all,
-                    onTap:    () {
-                      HapticFeedback.selectionClick();
-                      onSelect(EventFilter.all);
-                    },
+                    onTap:    () => _pick(EventFilter.all),
                   ),
                 ),
-                // ── Date ↑ / Date ↓ ───────────────────────────────────────
-                // Tapping selects byDateAsc; tapping again toggles direction.
-                Expanded(
-                  child: _Pill(
-                    label:    _dateLabel,
-                    selected: _dateActive,
-                    onTap:    () {
-                      HapticFeedback.selectionClick();
-                      _onDateTap();
-                    },
+                _TimelinePill(
+                  ascending: selected == EventFilter.byDateAsc,
+                  active:    selected == EventFilter.byDateAsc ||
+                             selected == EventFilter.byDateDesc,
+                  onTap: () => _pick(
+                    selected == EventFilter.byDateDesc
+                        ? EventFilter.byDateAsc
+                        : EventFilter.byDateDesc,
                   ),
                 ),
               ],
@@ -127,111 +91,96 @@ class FilterPills extends StatelessWidget {
       ),
     );
   }
+
+  void _pick(EventFilter f) {
+    HapticFeedback.selectionClick();
+    onSelect(f);
+  }
 }
 
-// ── _Pill ─────────────────────────────────────────────────────────────────────
+// ── Pills ─────────────────────────────────────────────────────────────────────
 
-class _Pill extends StatefulWidget {
+class _Pill extends StatelessWidget {
   const _Pill({
     required this.label,
     required this.selected,
     required this.onTap,
   });
-
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
   @override
-  State<_Pill> createState() => _PillState();
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color:         selected ? scheme.onSurface : Colors.transparent,
+          borderRadius:  BorderRadius.circular(15),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize:   13,
+            fontWeight: FontWeight.w500,
+            color: selected ? scheme.surface : scheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _PillState extends State<_Pill> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-      reverseDuration: const Duration(milliseconds: 200),
-    );
-    _scale = Tween<double>(begin: 1.0, end: 0.92).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+class _TimelinePill extends StatelessWidget {
+  const _TimelinePill({
+    required this.ascending,
+    required this.active,
+    required this.onTap,
+  });
+  final bool ascending, active;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme     = Theme.of(context);
-    final onSurface = theme.colorScheme.onSurface;
-
+    final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
-      onTap:       widget.onTap,
-      onTapDown:   (_) => _ctrl.forward(),
-      onTapUp:     (_) => _ctrl.reverse(),
-      onTapCancel: () => _ctrl.reverse(),
-      child: ScaleTransition(
-        scale: _scale,
-        child: SizedBox(
-          width: double.infinity,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Background — fades in/out without color interpolation
-              Positioned.fill(
-                child: AnimatedOpacity(
-                  opacity:  widget.selected ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  curve:    Curves.easeOut,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: [
-                        BoxShadow(
-                          color:      Colors.black.withValues(alpha: 0.10),
-                          blurRadius: 6,
-                          offset:     const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color:        active ? scheme.onSurface : Colors.transparent,
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (active) ...[
+              Icon(
+                ascending
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
+                size:  14,
+                color: scheme.surface,
               ),
-
-              // Label
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 11),
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 200),
-                  curve:    Curves.easeOut,
-                  style: AppTextStyles.labelLarge.copyWith(
-                    color: widget.selected
-                        ? onSurface
-                        : onSurface.withValues(alpha: 0.45),
-                    fontWeight: widget.selected
-                        ? FontWeight.w500
-                        : FontWeight.w400,
-                  ),
-                  child: Text(
-                    widget.label,
-                    maxLines:  1,
-                    softWrap:  false,
-                    overflow:  TextOverflow.visible,
-                  ),
-                ),
-              ),
+              const SizedBox(width: 4),
             ],
-          ),
+            Text(
+              'Timeline',
+              style: TextStyle(
+                fontSize:   13,
+                fontWeight: FontWeight.w500,
+                color: active ? scheme.surface : scheme.onSurface,
+              ),
+            ),
+          ],
         ),
       ),
     );

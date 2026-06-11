@@ -8,66 +8,72 @@ import '../../domain/event.dart';
 part 'events_provider.g.dart';
 
 // ── Filter state ──────────────────────────────────────────────────────────────
+// @riverpod on EventFilterNotifier → generator emits `eventFilterProvider`
+// (strips the "Notifier" suffix). Matches the existing .g.dart.
 
 @riverpod
 class EventFilterNotifier extends _$EventFilterNotifier {
   @override
   EventFilter build() => EventFilter.upcoming;
 
-  void select(EventFilter filter) => state = filter;
+  void select(EventFilter f) => state = f;
 }
 
-// ── Grouped events stream (upcoming / past / all) ─────────────────────────────
+// ── Countdown events (Events tab) ─────────────────────────────────────────────
 
 final groupedEventsProvider =
     StreamProvider.autoDispose<Map<String, List<Event>>>((ref) {
   final filter = ref.watch(eventFilterProvider);
   final repo   = ref.watch(eventRepositoryProvider);
-
   return repo.watchFiltered(filter).map((events) {
     final grouped = <String, List<Event>>{};
-
-    if (filter == EventFilter.all) {
-      final now      = DateTime.now();
-      final active   = events.where((e) => e.targetDate.isAfter(now));
-      final finished = events.where((e) => !e.targetDate.isAfter(now));
-
-      // Pass 1: active events in sortOrder order → establishes category order.
-      for (final e in active) {
-        grouped.putIfAbsent(e.category, () => []).add(e);
-      }
-      // Pass 2: finished events appended after active ones in the same
-      // category group, or added as a new group at the very end if the
-      // whole category is finished.
-      for (final e in finished) {
-        grouped.putIfAbsent(e.category, () => []).add(e);
-      }
-
-      return grouped;
-    }
-
-    // All other filters — unchanged behaviour.
-    for (final event in events) {
-      grouped.putIfAbsent(event.category, () => []).add(event);
+    for (final e in events) {
+      grouped.putIfAbsent(e.category, () => []).add(e);
     }
     return grouped;
   });
 });
 
-// ── Flat events stream — edit mode init ───────────────────────────────────────
-// Always uses EventFilter.all (sortOrder order). Only subscribed while
-// EventsScreen is snapshotting its initial edit-mode state.
+/// Flat countdown stream — edit-mode initialisation.
+final flatEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
+    ref.watch(eventRepositoryProvider).watchFiltered(EventFilter.all));
 
-final flatEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) {
+/// Flat chronological stream — Date ↑ / ↓ view.
+final byDateEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
+    ref
+        .watch(eventRepositoryProvider)
+        .watchFiltered(ref.watch(eventFilterProvider)));
+
+// ── Countup events (Count Up tab) ─────────────────────────────────────────────
+
+final groupedCountupProvider =
+    StreamProvider.autoDispose<Map<String, List<Event>>>((ref) {
   final repo = ref.watch(eventRepositoryProvider);
-  return repo.watchFiltered(EventFilter.all);
+  return repo.watchByType(EventType.countup).map((events) {
+    final grouped = <String, List<Event>>{};
+    for (final e in events) {
+      grouped.putIfAbsent(e.category, () => []).add(e);
+    }
+    return grouped;
+  });
 });
 
-// ── Flat chronological stream — Date ↑ / Date ↓ view ─────────────────────────
-// Reacts automatically when the filter toggles between byDateAsc / byDateDesc.
+final flatCountupProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
+    ref.watch(eventRepositoryProvider).watchByType(EventType.countup));
 
-final byDateEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) {
-  final filter = ref.watch(eventFilterProvider);
-  final repo   = ref.watch(eventRepositoryProvider);
-  return repo.watchFiltered(filter);
+// ── Tally items (Tally tab) ───────────────────────────────────────────────────
+
+final groupedTallyProvider =
+    StreamProvider.autoDispose<Map<String, List<Event>>>((ref) {
+  final repo = ref.watch(eventRepositoryProvider);
+  return repo.watchByType(EventType.tally).map((events) {
+    final grouped = <String, List<Event>>{};
+    for (final e in events) {
+      grouped.putIfAbsent(e.category, () => []).add(e);
+    }
+    return grouped;
+  });
 });
+
+final flatTallyProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
+    ref.watch(eventRepositoryProvider).watchByType(EventType.tally));

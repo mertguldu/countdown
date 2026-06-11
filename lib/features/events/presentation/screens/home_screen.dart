@@ -11,6 +11,7 @@ import '../../../../core/theme/app_text_styles.dart';
 import '../../../events/domain/event.dart';
 import '../../../events/presentation/providers/events_provider.dart';
 import '../../../events/presentation/screens/events_screen.dart';
+import '../../../events/presentation/screens/tally_screen.dart';
 import '../widgets/filter_pills.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -24,8 +25,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   _HomeTab _activeTab = _HomeTab.events;
   bool     _isEditing = false;
   EditTab  _editTab   = EditTab.active;
-
-  EventFilter? _preEditFilter;
 
   late final PageController _pageController;
 
@@ -65,8 +64,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _enterEditMode() {
-    _preEditFilter = ref.read(eventFilterProvider);
-    ref.read(eventFilterProvider.notifier).select(EventFilter.all);
     setState(() {
       _isEditing = true;
       _editTab   = EditTab.active;
@@ -74,10 +71,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _exitEditMode() {
-    if (_preEditFilter != null) {
-      ref.read(eventFilterProvider.notifier).select(_preEditFilter!);
-      _preEditFilter = null;
-    }
     setState(() {
       _isEditing = false;
       _editTab   = EditTab.active;
@@ -88,12 +81,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _onFabPressed() {
     HapticFeedback.mediumImpact();
-    switch (_activeTab) {
-      case _HomeTab.events:
-        context.push(AppRoutes.newEvent);
-      case _HomeTab.counter:
-        break;
-    }
+    // Pre-select the event type based on which tab is active so the wizard
+    // opens on the right branch.
+    final preselect = switch (_activeTab) {
+      _HomeTab.events  => EventType.countdown,
+      _HomeTab.countUp => EventType.countup,
+      _HomeTab.tally   => EventType.tally,
+    };
+    context.push(AppRoutes.newEvent, extra: preselect);
   }
 
   // ── Build ────────────────────────────────────────────────────────────────────
@@ -121,7 +116,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: [
                     _Header(
                       isEditing:      _isEditing,
-                      showEditButton: _activeTab == _HomeTab.events,
+                      showEditButton: true,   // edit available on all tabs
                       onEditTap:      _toggleEdit,
                       onSettingsTap:  () => HapticFeedback.selectionClick(),
                     ),
@@ -147,12 +142,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       setState(() => _activeTab = newTab);
                     },
                     children: [
+                      // Tab 1 — Countdown events
                       EventsScreen(
-                        key:       const ValueKey('events'),
-                        isEditing: _isEditing,
-                        editTab:   _editTab,
+                        key:              const ValueKey('events'),
+                        isEditing:        _isEditing && _activeTab == _HomeTab.events,
+                        editTab:          _editTab,
+                        eventTypeFilter:  EventType.countdown,
                       ),
-                      _CounterTab(key: const ValueKey('counter')),
+                      // Tab 2 — Count-up events (same screen, different filter)
+                      EventsScreen(
+                        key:              const ValueKey('countup'),
+                        isEditing:        _isEditing && _activeTab == _HomeTab.countUp,
+                        editTab:          EditTab.active,
+                        eventTypeFilter:  EventType.countup,
+                      ),
+                      // Tab 3 — Tally counters
+                      TallyScreen(
+                        key:       const ValueKey('tally'),
+                        isEditing: _isEditing && _activeTab == _HomeTab.tally,
+                      ),
                     ],
                   ),
                 ),
@@ -161,8 +169,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
 
           // ── Floating bottom stack ─────────────────────────────────────────
-          // In edit mode: show Active / Finished tab pills.
-          // Otherwise: show the FAB + filter pills.
           Positioned(
             bottom: bottomPos,
             left: 0, right: 0,
@@ -170,7 +176,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               clipBehavior: Clip.none,
               children: [
 
-                // ── Normal bar — sizes the Stack ───────────────────────────────────
+                // ── Normal bar ────────────────────────────────────────────────
                 IgnorePointer(
                   ignoring: _isEditing,
                   child: AnimatedOpacity(
@@ -195,11 +201,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 30),
-                          child: FilterPills(
-                            selected: ref.watch(eventFilterProvider),
-                            onSelect: ref.read(eventFilterProvider.notifier).select,
+                        // Always in the layout so the FAB stays anchored.
+                        // Faded out and non-interactive on non-events tabs.
+                        IgnorePointer(
+                          ignoring: _activeTab != _HomeTab.events,
+                          child: AnimatedOpacity(
+                            opacity:  _activeTab == _HomeTab.events ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 220),
+                            curve:    Curves.easeInOut,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 30),
+                              child: FilterPills(
+                                selected: ref.watch(eventFilterProvider),
+                                onSelect: ref.read(eventFilterProvider.notifier).select,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -207,13 +223,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
 
-                // ── Edit tab bar — pinned to bottom, never affects layout ──────────
+                // ── Edit tab bar (Active / Finished) — events tab only ─────────
                 Positioned(
                   bottom: 0, left: 0, right: 0,
                   child: IgnorePointer(
                     ignoring: !(_isEditing && _activeTab == _HomeTab.events),
                     child: AnimatedOpacity(
-                      opacity:  (_isEditing && _activeTab == _HomeTab.events) ? 1.0 : 0.0,
+                      opacity:  (_isEditing && _activeTab == _HomeTab.events)
+                          ? 1.0
+                          : 0.0,
                       duration: const Duration(milliseconds: 220),
                       curve:    Curves.easeInOut,
                       child: Padding(
@@ -237,15 +255,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 // ── _EditTabBar ───────────────────────────────────────────────────────────────
-//
-// Frosted-glass two-pill bar shown at the bottom while in edit mode.
-// Matches the visual style of FilterPills.
 
 class _EditTabBar extends StatelessWidget {
-  const _EditTabBar({
-    required this.selected,
-    required this.onSelect,
-  });
+  const _EditTabBar({required this.selected, required this.onSelect});
 
   final EditTab selected;
   final ValueChanged<EditTab> onSelect;
@@ -459,9 +471,7 @@ class _Header extends StatelessWidget {
                   transitionBuilder: (child, anim) =>
                       FadeTransition(opacity: anim, child: child),
                   child: Icon(
-                    isEditing
-                        ? Icons.edit               // filled when active
-                        : Icons.edit_outlined,     // outline at rest
+                    isEditing ? Icons.edit : Icons.edit_outlined,
                     key: ValueKey(isEditing),
                     size: 20,
                     color: isEditing
@@ -503,12 +513,21 @@ class _LogoPlaceholder extends StatelessWidget {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-enum _HomeTab { events, counter }
+// Three tabs: Events (countdown), Count Up, Tally.
+enum _HomeTab { events, countUp, tally }
 
 extension _HomeTabX on _HomeTab {
   String get label => switch (this) {
         _HomeTab.events  => 'Events',
-        _HomeTab.counter => 'Counter',
+        _HomeTab.countUp => 'Count Up',
+        _HomeTab.tally   => 'Tally',
+      };
+}
+
+extension EditTabX on EditTab {
+  String get label => switch (this) {
+        EditTab.active   => 'Active',
+        EditTab.finished => 'Finished',
       };
 }
 
@@ -529,9 +548,9 @@ class _TabRow extends StatelessWidget {
         children: _HomeTab.values
             .map((tab) => Expanded(
                   child: _TabItem(
-                    label: tab.label,
+                    label:    tab.label,
                     selected: active == tab,
-                    onTap: () => onSelect(tab),
+                    onTap:    () => onSelect(tab),
                   ),
                 ))
             .toList(),
@@ -568,7 +587,7 @@ class _TabItem extends StatelessWidget {
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 200),
               style: AppTextStyles.titleMedium.copyWith(
-                color: selected ? onSurface : muted,
+                color:      selected ? onSurface : muted,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
               ),
               child: Text(label),
@@ -581,23 +600,6 @@ class _TabItem extends StatelessWidget {
             color: selected ? onSurface : Colors.transparent,
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ── Counter tab stub ──────────────────────────────────────────────────────────
-
-class _CounterTab extends StatelessWidget {
-  const _CounterTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = Theme.of(context).textTheme.bodyMedium?.color;
-    return Center(
-      child: Text(
-        'Counter — coming soon',
-        style: AppTextStyles.bodyMedium.copyWith(color: muted),
       ),
     );
   }

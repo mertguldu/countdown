@@ -7,50 +7,37 @@ import '../../../../core/theme/app_text_styles.dart';
 import '../../data/event_repository.dart';
 import '../../domain/event.dart';
 import '../providers/events_provider.dart';
-import '../widgets/event_list_item.dart';
+import '../widgets/tally_list_item.dart';
 
-enum EditTab { active, finished }
-
-/// Shared screen for both countdown (Events tab) and countup (Count Up tab).
-/// [eventTypeFilter] switches providers, display widgets, and edit-mode logic.
-class EventsScreen extends ConsumerStatefulWidget {
-  const EventsScreen({
-    super.key,
-    this.isEditing        = false,
-    this.editTab          = EditTab.active,
-    this.eventTypeFilter  = EventType.countdown,
-  });
-
-  final bool      isEditing;
-  final EditTab   editTab;
-  final EventType eventTypeFilter;
+/// Tab 3 — Tally counters grouped by category.
+/// Supports the same drag-to-reorder / delete edit mode as EventsScreen,
+/// but without the active/finished distinction.
+class TallyScreen extends ConsumerStatefulWidget {
+  const TallyScreen({super.key, this.isEditing = false});
+  final bool isEditing;
 
   @override
-  ConsumerState<EventsScreen> createState() => _EventsScreenState();
+  ConsumerState<TallyScreen> createState() => _TallyScreenState();
 }
 
-class _EventsScreenState extends ConsumerState<EventsScreen> {
+class _TallyScreenState extends ConsumerState<TallyScreen> {
   // ── Edit-mode local state ─────────────────────────────────────────────────
-  List<({String category, List<Event> events})> _groups         = [];
-  List<Event>                                   _finishedEvents  = [];
-  bool                                          _editInitialized = false;
+  List<({String category, List<Event> events})> _groups = [];
+  bool _editInitialized = false;
   ProviderSubscription<AsyncValue<List<Event>>>? _flatSub;
-
-  bool get _isCountup => widget.eventTypeFilter == EventType.countup;
-
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    _runAutoResets();
     if (widget.isEditing) _scheduleEditInit();
   }
 
   @override
-  void didUpdateWidget(EventsScreen old) {
+  void didUpdateWidget(TallyScreen old) {
     super.didUpdateWidget(old);
     if (widget.isEditing && !old.isEditing) _scheduleEditInit();
-    if (!widget.isEditing && old.isEditing) _tearDownEditMode();
+    if (!widget.isEditing && old.isEditing) _tearDown();
   }
 
   @override
@@ -59,15 +46,22 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     super.dispose();
   }
 
-  // ── Edit init ─────────────────────────────────────────────────────────────
+  // ── Auto-reset ────────────────────────────────────────────────────────────
+
+  Future<void> _runAutoResets() async {
+    final repo = ref.read(eventRepositoryProvider);
+    final events = await repo.watchByType(EventType.tally).first;
+    await repo.processAutoResets(events);
+  }
+
+  // ── Edit-mode init ────────────────────────────────────────────────────────
 
   void _scheduleEditInit() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _flatSub?.close();
-      final provider = _isCountup ? flatCountupProvider : flatEventsProvider;
       _flatSub = ref.listenManual(
-        provider,
+        flatTallyProvider,
         (_, next) {
           if (_editInitialized || !mounted) return;
           next.whenData((events) {
@@ -84,46 +78,20 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     });
   }
 
-  void _tearDownEditMode() {
+  void _tearDown() {
     _flatSub?.close();
     _flatSub = null;
-    setState(() {
-      _editInitialized = false;
-      _groups          = [];
-      _finishedEvents  = [];
-    });
+    setState(() { _editInitialized = false; _groups = []; });
   }
 
   void _initFromEvents(List<Event> events) {
-    if (_isCountup) {
-      // Countup: no active/finished split — just group by category.
-      final map = <String, List<Event>>{};
-      for (final e in events) {
-        (map[e.category] ??= []).add(e);
-      }
-      _groups         = map.entries
-          .map((e) => (category: e.key, events: [...e.value]))
-          .toList();
-      _finishedEvents = [];
-      return;
-    }
-
-    // Countdown: split into active (future date) and finished (past date).
-    final now        = DateTime.now();
-    final activeMap  = <String, List<Event>>{};
-    final finished   = <Event>[];
+    final map = <String, List<Event>>{};
     for (final e in events) {
-      final td = e.targetDate;
-      if (td != null && td.isAfter(now)) {
-        (activeMap[e.category] ??= []).add(e);
-      } else {
-        finished.add(e);
-      }
+      (map[e.category] ??= []).add(e);
     }
-    _groups = activeMap.entries
+    _groups = map.entries
         .map((e) => (category: e.key, events: [...e.value]))
         .toList();
-    _finishedEvents = finished;
   }
 
   // ── Reorder ───────────────────────────────────────────────────────────────
@@ -159,26 +127,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   void _saveOrder(List<({String category, List<Event> events})> groups) {
     final updates = <({int id, int sortOrder})>[];
     var order = 0;
-
-    if (_isCountup) {
-      // Simple linear order — no past/active split.
-      for (final g in groups) {
-        for (final e in g.events) {
-          updates.add((id: e.id, sortOrder: order++));
-        }
-      }
-      ref.read(eventRepositoryProvider).reorder(updates);
-      return;
-    }
-
-    // Countdown: active events first, then finished (preserve their order).
     for (final g in groups) {
       for (final e in g.events) {
         updates.add((id: e.id, sortOrder: order++));
       }
-    }
-    for (final e in _finishedEvents) {
-      updates.add((id: e.id, sortOrder: order++));
     }
     ref.read(eventRepositoryProvider).reorder(updates);
   }
@@ -189,8 +141,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete event?'),
-        content: Text('"${event.title}" will be permanently removed.'),
+        title: const Text('Remove counter?'),
+        content: Text('"${event.title}" will be permanently deleted.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -213,113 +165,65 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               ))
           .where((g) => g.events.isNotEmpty)
           .toList();
-      _finishedEvents =
-          _finishedEvents.where((e) => e.id != event.id).toList();
     });
 
     await ref.read(eventRepositoryProvider).deleteEvent(event.id);
   }
 
+  // ── Tally adjust ──────────────────────────────────────────────────────────
+
+  void _adjust(int id, int delta) =>
+      ref.read(eventRepositoryProvider).adjustTallyCount(id, delta);
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    // ── Edit mode ────────────────────────────────────────────────────────────
     if (widget.isEditing) {
       if (!_editInitialized) {
         return const Center(child: CircularProgressIndicator.adaptive());
       }
-
-      // Countup: no active/finished tabs — just one grouped edit view.
-      if (_isCountup) {
-        return _groups.isEmpty
-            ? const _EmptyState(message: 'No count-up events yet.\nTap + to add one.')
-            : _GroupedEditView(
-                key:             const ValueKey('countup_edit'),
-                groups:          _groups,
-                eventType:       EventType.countup,
-                onMoveGroupUp:   _moveGroupUp,
-                onMoveGroupDown: _moveGroupDown,
-                onReorderItem:   _reorderItem,
-                onDelete:        _onDelete,
-              );
-      }
-
-      // Countdown: AnimatedSwitcher between Active and Finished tabs.
-      return AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        transitionBuilder: (child, anim) =>
-            FadeTransition(opacity: anim, child: child),
-        child: widget.editTab == EditTab.finished
-            ? _FinishedEditView(
-                key:      const ValueKey('finished_view'),
-                events:   _finishedEvents,
-                onDelete: _onDelete,
-              )
-            : (_groups.isEmpty
-                ? const _EmptyState(
-                    key: ValueKey('empty_active'),
-                    message: 'No upcoming events.',
-                  )
-                : _GroupedEditView(
-                    key:             const ValueKey('active_edit'),
-                    groups:          _groups,
-                    eventType:       EventType.countdown,
-                    onMoveGroupUp:   _moveGroupUp,
-                    onMoveGroupDown: _moveGroupDown,
-                    onReorderItem:   _reorderItem,
-                    onDelete:        _onDelete,
-                  )),
+      if (_groups.isEmpty) return const _EmptyState();
+      return _GroupedEditView(
+        groups:          _groups,
+        onMoveGroupUp:   _moveGroupUp,
+        onMoveGroupDown: _moveGroupDown,
+        onReorderItem:   _reorderItem,
+        onDelete:        _onDelete,
       );
     }
 
-    // ── Normal mode ──────────────────────────────────────────────────────────
-
-    // Countup — grouped, no filter pills.
-    if (_isCountup) {
-      return ref.watch(groupedCountupProvider).when(
-        data: (grouped) => grouped.isEmpty
-            ? const _EmptyState(
-                message: 'No count-up events yet.\nTap + to add one.')
-            : _EventList(grouped: grouped, eventType: EventType.countup),
-        loading: () =>
-            const Center(child: CircularProgressIndicator.adaptive()),
-        error: (e, _) => _ErrorState('$e'),
-      );
-    }
-
-    // Countdown — check filter for date-sorted flat view.
-    final filter = ref.watch(eventFilterProvider);
-    if (filter == EventFilter.byDateAsc ||
-        filter == EventFilter.byDateDesc) {
-      return ref.watch(byDateEventsProvider).when(
-        data: (events) => events.isEmpty
-            ? const _EmptyState(message: 'No events yet.')
-            : _FlatDateList(events: events),
-        loading: () =>
-            const Center(child: CircularProgressIndicator.adaptive()),
-        error: (e, _) => _ErrorState('$e'),
-      );
-    }
-
-    return ref.watch(groupedEventsProvider).when(
+    return ref.watch(groupedTallyProvider).when(
       data: (grouped) => grouped.isEmpty
-          ? const _EmptyState(message: 'No events yet.\nTap + to add one.')
-          : _EventList(grouped: grouped, eventType: EventType.countdown),
+          ? const _EmptyState()
+          : _TallyList(
+              grouped:     grouped,
+              onIncrement: (id) => _adjust(id, 1),
+              onDecrement: (id) => _adjust(id, -1),
+            ),
       loading: () =>
           const Center(child: CircularProgressIndicator.adaptive()),
-      error: (e, _) => _ErrorState('$e'),
+      error: (e, _) => Center(
+        child: Text('Error: $e',
+            style: AppTextStyles.bodyMedium.copyWith(
+                color: Theme.of(context).colorScheme.error)),
+      ),
     );
   }
 }
 
-// ── _EventList ────────────────────────────────────────────────────────────────
+// ── _TallyList ────────────────────────────────────────────────────────────────
 
-class _EventList extends StatelessWidget {
-  const _EventList({required this.grouped, this.eventType = EventType.countdown});
+class _TallyList extends StatelessWidget {
+  const _TallyList({
+    required this.grouped,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
 
   final Map<String, List<Event>> grouped;
-  final EventType eventType;
+  final ValueChanged<int> onIncrement;
+  final ValueChanged<int> onDecrement;
 
   @override
   Widget build(BuildContext context) {
@@ -335,10 +239,10 @@ class _EventList extends StatelessWidget {
           children: [
             _CategoryHeader(cat),
             for (int j = 0; j < events.length; j++) ...[
-              EventListItem(
-                event:     events[j],
-                eventType: eventType,
-                onTap:     () {},
+              TallyListItem(
+                event:       events[j],
+                onIncrement: () => onIncrement(events[j].id),
+                onDecrement: () => onDecrement(events[j].id),
               ),
               if (j < events.length - 1) const _Divider(),
             ],
@@ -349,29 +253,11 @@ class _EventList extends StatelessWidget {
   }
 }
 
-// ── _FlatDateList ─────────────────────────────────────────────────────────────
-
-class _FlatDateList extends StatelessWidget {
-  const _FlatDateList({required this.events});
-  final List<Event> events;
-
-  @override
-  Widget build(BuildContext context) => ListView.separated(
-    padding: const EdgeInsets.only(top: 8, bottom: 120),
-    itemCount: events.length,
-    separatorBuilder: (_, __) => const _Divider(),
-    itemBuilder: (ctx, i) =>
-        EventListItem(event: events[i], onTap: () {}),
-  );
-}
-
 // ── _GroupedEditView ──────────────────────────────────────────────────────────
 
 class _GroupedEditView extends StatelessWidget {
   const _GroupedEditView({
-    super.key,
     required this.groups,
-    required this.eventType,
     required this.onMoveGroupUp,
     required this.onMoveGroupDown,
     required this.onReorderItem,
@@ -379,7 +265,6 @@ class _GroupedEditView extends StatelessWidget {
   });
 
   final List<({String category, List<Event> events})> groups;
-  final EventType eventType;
   final void Function(int) onMoveGroupUp;
   final void Function(int) onMoveGroupDown;
   final void Function(int, int, int) onReorderItem;
@@ -394,12 +279,12 @@ class _GroupedEditView extends StatelessWidget {
 
       slivers.add(SliverToBoxAdapter(
         child: _EditGroupHeader(
-          key:         ValueKey('hdr_${g.category}'),
-          category:    g.category,
-          canMoveUp:   capturedGi > 0,
-          canMoveDown: capturedGi < groups.length - 1,
-          onMoveUp:    () => onMoveGroupUp(capturedGi),
-          onMoveDown:  () => onMoveGroupDown(capturedGi),
+          key:          ValueKey('hdr_${g.category}'),
+          category:     g.category,
+          canMoveUp:    capturedGi > 0,
+          canMoveDown:  capturedGi < groups.length - 1,
+          onMoveUp:     () => onMoveGroupUp(capturedGi),
+          onMoveDown:   () => onMoveGroupDown(capturedGi),
         ),
       ));
 
@@ -414,9 +299,8 @@ class _GroupedEditView extends StatelessWidget {
             index: ii,
             child: Material(
               color: Colors.transparent,
-              child: EventListItem(
+              child: TallyListItem(
                 event:       event,
-                eventType:   eventType,
                 isEditing:   true,
                 isDraggable: true,
                 onDelete:    () => onDelete(event),
@@ -435,42 +319,13 @@ class _GroupedEditView extends StatelessWidget {
         ));
       }
     }
+
     slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 120)));
     return CustomScrollView(slivers: slivers);
   }
 }
 
-// ── _FinishedEditView ─────────────────────────────────────────────────────────
-
-class _FinishedEditView extends StatelessWidget {
-  const _FinishedEditView({
-    super.key,
-    required this.events,
-    required this.onDelete,
-  });
-
-  final List<Event> events;
-  final Future<void> Function(Event) onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    if (events.isEmpty) {
-      return const _EmptyState(message: 'No finished events.');
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.only(top: 8, bottom: 120),
-      itemCount: events.length,
-      separatorBuilder: (_, __) => const _Divider(),
-      itemBuilder: (ctx, i) => EventListItem(
-        event:     events[i],
-        isEditing: true,
-        onDelete:  () => onDelete(events[i]),
-      ),
-    );
-  }
-}
-
-// ── Shared sub-widgets ────────────────────────────────────────────────────────
+// ── Shared helpers ────────────────────────────────────────────────────────────
 
 class _EditGroupHeader extends StatelessWidget {
   const _EditGroupHeader({
@@ -520,7 +375,9 @@ class _MoveBtn extends StatelessWidget {
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       child: Icon(icon, size: 22,
-          color: enabled ? activeColor : activeColor.withValues(alpha: 0.2)),
+          color: enabled
+              ? activeColor
+              : activeColor.withValues(alpha: 0.2)),
     ),
   );
 }
@@ -552,28 +409,15 @@ class _Divider extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({super.key, required this.message});
-  final String message;
+  const _EmptyState();
 
   @override
   Widget build(BuildContext context) {
     final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.40);
     return Center(
-      child: Text(message,
+      child: Text('No tallies yet.\nTap + to add one.',
           textAlign: TextAlign.center,
           style: AppTextStyles.bodyMedium.copyWith(color: muted, height: 1.6)),
     );
   }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState(this.message);
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Text('Error: $message',
-        style: AppTextStyles.bodyMedium.copyWith(
-            color: Theme.of(context).colorScheme.error)),
-  );
 }

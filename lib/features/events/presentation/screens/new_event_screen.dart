@@ -13,6 +13,7 @@ import '../../../../core/database/database.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../data/event_repository.dart';
+import '../../domain/event.dart';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -72,60 +73,77 @@ enum _RepeatOption {
 // ── NewEventScreen ────────────────────────────────────────────────────────────
 
 class NewEventScreen extends ConsumerStatefulWidget {
-  const NewEventScreen({super.key});
+  /// [initialEventType] is set by the FAB based on the active tab so the
+  /// type-selection step (step 2) opens pre-selected.
+  const NewEventScreen({super.key, this.initialEventType});
+  final EventType? initialEventType;
 
   @override
   ConsumerState<NewEventScreen> createState() => _NewEventScreenState();
 }
 
 class _NewEventScreenState extends ConsumerState<NewEventScreen> {
-  int _step = 1;
-  static const int _kTotal = 4;
+  int  _step = 1;
   bool _done = false;
   bool _saving = false;
   String _createdName = '';
+
+  // ── Event type + tally reset ──────────────────────────────────────────────
+  // _isCountingDown is now a computed getter so all original downstream logic
+  // (calendar minDate, _clampDay, _scheduleNotification, …) still compiles
+  // unchanged.
+  late EventType  _eventType;
+  ResetPeriod     _resetPeriod = ResetPeriod.never;
+
+  bool get _isCountingDown => _eventType == EventType.countdown;
+
+  /// Countdown / Countup: 5 steps.  Tally: 4 steps.
+  int get _totalSteps => _eventType == EventType.tally ? 4 : 5;
 
   // ── Step 1 ───────────────────────────────────────────────────────────────────
   final _nameCtrl = TextEditingController();
   String _category = 'Trips';
   bool _nameError = false;
 
-  // ── Step 2 ───────────────────────────────────────────────────────────────────
-  bool _isCountingDown = true;
+  // ── Step 3 (date) ────────────────────────────────────────────────────────────
   late int _calYear;
-  late int _calMonth; // 1-indexed
+  late int _calMonth;
   late int _calDay;
-  int _calHour = 0;
+  int _calHour   = 0;
   int _calMinute = 0;
 
-  // ── Step 3 ───────────────────────────────────────────────────────────────────
+  // ── Step 4 (details) ─────────────────────────────────────────────────────────
   final _noteCtrl     = TextEditingController();
   final _locationCtrl = TextEditingController();
   _RepeatOption _repeatOption = _RepeatOption.never;
   String? _imagePath;
   final _picker = ImagePicker();
 
-  // ── Step 4 ───────────────────────────────────────────────────────────────────
-  _Reminder _reminder      = _Reminder.oneDay;
+  // ── Step 5 (reminder) ────────────────────────────────────────────────────────
+  _Reminder _reminder     = _Reminder.oneDay;
   int _customWeeks  = 0;
   int _customDays   = 1;
   int _customHours  = 0;
   int _customMins   = 0;
 
-  // ── Life-cycle ────────────────────────────────────────────────────────────────
+  // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    _eventType = widget.initialEventType ?? EventType.countdown;
+
     final now = DateTime.now();
     _calYear  = now.year;
     _calMonth = now.month;
     _calDay   = now.day;
-    // Default to the next hour so the time is immediately valid for countdown.
     final defaultTime = now.add(const Duration(hours: 1));
     _calHour   = defaultTime.hour;
     _calMinute = 0;
     _nameCtrl.addListener(_onNameTyped);
+
+    // Count-up defaults to Custom reminder.
+    if (_eventType == EventType.countup) _reminder = _Reminder.custom;
   }
 
   @override
@@ -157,29 +175,45 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
     return '$h:${minute.toString().padLeft(2, '0')} $ampm';
   }
 
-  // ── Step 2 actions ────────────────────────────────────────────────────────────
+  // ── Type-change handlers ──────────────────────────────────────────────────────
 
-  void _onTypeChanged(bool isDown) {
+  /// Called from the NEW step-2 type-selection widget.
+  void _onEventTypeChanged(EventType type) {
     setState(() {
-      _isCountingDown = isDown;
-      if (!isDown) {
-        // Counting-up events don't use before-reminders
-        _reminder = _Reminder.custom;
-      } else {
+      _eventType = type;
+      if (type == EventType.countdown) {
         _reminder = _Reminder.oneDay;
-        // If the current selection is in the past, reset to today + next hour.
         final now = DateTime.now();
         if (_selectedDate.isBefore(now)) {
           final next = now.add(const Duration(hours: 1));
-          _calYear   = now.year;
-          _calMonth  = now.month;
-          _calDay    = now.day;
-          _calHour   = next.hour;
-          _calMinute = 0;
+          _calYear = now.year; _calMonth = now.month;
+          _calDay  = now.day;  _calHour  = next.hour; _calMinute = 0;
+        }
+      } else if (type == EventType.countup) {
+        _reminder = _Reminder.custom;
+      }
+    });
+  }
+
+  /// Called from the original countdown ↔ countup toggle inside _StepDate.
+  void _onTypeChanged(bool isDown) {
+    setState(() {
+      _eventType = isDown ? EventType.countdown : EventType.countup;
+      if (!isDown) {
+        _reminder = _Reminder.custom;
+      } else {
+        _reminder = _Reminder.oneDay;
+        final now = DateTime.now();
+        if (_selectedDate.isBefore(now)) {
+          final next = now.add(const Duration(hours: 1));
+          _calYear = now.year; _calMonth = now.month;
+          _calDay  = now.day;  _calHour  = next.hour; _calMinute = 0;
         }
       }
     });
   }
+
+  // ── Step 3 (date) actions ─────────────────────────────────────────────────────
 
   void _prevMonth() => setState(() {
         _calMonth--;
@@ -196,9 +230,8 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
   void _clampDay() {
     final daysInMonth = DateTime(_calYear, _calMonth + 1, 0).day;
     if (_calDay > daysInMonth) _calDay = daysInMonth;
-    // If counting down and the clamped date is now in the past, jump to 1st.
     if (_isCountingDown) {
-      final now = DateTime.now();
+      final now     = DateTime.now();
       final clamped = DateTime(_calYear, _calMonth, _calDay);
       if (clamped.isBefore(DateTime(now.year, now.month, now.day))) {
         _calDay = now.day.clamp(1, daysInMonth);
@@ -213,14 +246,13 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
     );
     if (t == null || !mounted) return;
 
-    // For countdown: if today is selected, the chosen time must be in the future.
     if (_isCountingDown) {
       final now = DateTime.now();
       final isToday = _calYear == now.year &&
-          _calMonth == now.month &&
-          _calDay   == now.day;
+          _calMonth == now.month && _calDay == now.day;
       if (isToday) {
-        final picked = DateTime(now.year, now.month, now.day, t.hour, t.minute);
+        final picked =
+            DateTime(now.year, now.month, now.day, t.hour, t.minute);
         if (!picked.isAfter(now)) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -228,15 +260,14 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
               duration: Duration(seconds: 2),
             ),
           );
-          return; // leave the existing time unchanged
+          return;
         }
       }
     }
-
     setState(() { _calHour = t.hour; _calMinute = t.minute; });
   }
 
-  // ── Step 3 actions ────────────────────────────────────────────────────────────
+  // ── Step 4 (details) actions ──────────────────────────────────────────────────
 
   void _showRepeatPicker() {
     showModalBottomSheet<void>(
@@ -252,8 +283,6 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
   }
 
   Future<void> _pickImage() async {
-    // iOS: NSPhotoLibraryUsageDescription must be in ios/Runner/Info.plist
-    // Android 13+: no extra manifest entry needed (image_picker ≥ 0.8.6)
     try {
       final img = await _picker.pickImage(
         source: ImageSource.gallery,
@@ -262,7 +291,6 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
       );
       if (img == null || !mounted) return;
 
-      // Copy to app documents so the path stays valid after the picker closes.
       final appDir    = await getApplicationDocumentsDirectory();
       final imagesDir = Directory(p.join(appDir.path, 'event_images'));
       await imagesDir.create(recursive: true);
@@ -291,8 +319,10 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
       setState(() => _nameError = true);
       return;
     }
-    // Step 2: for countdown, the chosen datetime must be in the future.
-    if (_step == 2 && _isCountingDown && !_selectedDate.isAfter(DateTime.now())) {
+    // Date step is now step 3 (was step 2 in original).
+    if (_step == 3 &&
+        _isCountingDown &&
+        !_selectedDate.isAfter(DateTime.now())) {
       HapticFeedback.heavyImpact();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -302,7 +332,7 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
       );
       return;
     }
-    if (_step == _kTotal) {
+    if (_step == _totalSteps) {
       _createEvent();
     } else {
       HapticFeedback.selectionClick();
@@ -322,51 +352,55 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
   Future<void> _createEvent() async {
     setState(() => _saving = true);
 
-    // 1. Safely ask for permission (catch any platform errors so it doesn't block)
     try {
       await NotificationService.requestPermissions();
     } catch (e) {
       debugPrint('Notification permission error: $e');
     }
 
-    final name     = _nameCtrl.text.trim().isEmpty ? 'My moment' : _nameCtrl.text.trim();
+    final name     = _nameCtrl.text.trim().isEmpty
+        ? 'My moment'
+        : _nameCtrl.text.trim();
     final noteText = _noteCtrl.text.trim();
 
     try {
-      // 2. Insert into the database
       final repo    = ref.read(eventRepositoryProvider);
       final eventId = await repo.insertEvent(
         EventsCompanion(
           title:      Value(name),
           subtitle:   noteText.isNotEmpty ? Value(noteText) : const Value.absent(),
           category:   Value(_category),
-          targetDate: Value(_selectedDate),
+          eventType:  Value(_eventType.name),
+          targetDate: _eventType != EventType.tally
+              ? Value<DateTime?>(_selectedDate)
+              : const Value<DateTime?>(null),
           colorValue: Value(_colorValue),
           photoPath:  _imagePath != null ? Value(_imagePath!) : const Value.absent(),
+          resetPeriod: _eventType == EventType.tally
+              ? Value(_resetPeriod.name)
+              : const Value.absent(),
         ),
       );
 
-      // 3. Safely schedule the notification
-      try {
-        await _scheduleNotification(eventId, name);
-      } catch (notificationError) {
-        // The event was saved, but the alarm permission was likely denied.
-        debugPrint('Failed to schedule notification: $notificationError');
-        
-        // Optional: Let the user know the notification failed but the event is safe.
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Event saved, but notifications are disabled.')),
-          );
+      // Notifications are only relevant for countdown / countup events.
+      if (_eventType != EventType.tally) {
+        try {
+          await _scheduleNotification(eventId, name);
+        } catch (notificationError) {
+          debugPrint('Failed to schedule notification: $notificationError');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Event saved, but notifications are disabled.')),
+            );
+          }
         }
       }
 
-      // 4. Always proceed to the success screen if the DB insert worked
       if (mounted) {
         setState(() { _saving = false; _done = true; _createdName = name; });
       }
     } catch (e) {
-      // This catch block now ONLY handles database insertion failures
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context)
@@ -375,6 +409,7 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
     }
   }
 
+  // Unchanged from original — _isCountingDown is now a getter so it still works.
   Future<void> _scheduleNotification(int eventId, String name) async {
     DateTime? notifDate;
     String    body = '"$name" is coming up soon.';
@@ -399,7 +434,6 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
           }
       }
     } else {
-      // Counting up — fire X time after the start date
       final dur = _customDuration();
       if (dur.inMinutes > 0) {
         notifDate = _selectedDate.add(dur);
@@ -431,9 +465,10 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
           children: [
             if (!_done)
               _NavBar(
-                step: _step, totalSteps: _kTotal,
-                onBack: _step > 1 ? _prev : null,
-                onClose: () => context.pop(),
+                step:       _step,
+                totalSteps: _totalSteps,
+                onBack:     _step > 1 ? _prev : null,
+                onClose:    () => context.pop(),
               ),
 
             Expanded(
@@ -450,8 +485,9 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
 
             if (!_done) ...[
               _CtaArea(
-                isLastStep:  _step == _kTotal,
-                isSkippable: _step == 3,
+                isLastStep:  _step == _totalSteps,
+                // "Skip this step" on Details (step 4) for countdown/countup only.
+                isSkippable: _step == 4 && _eventType != EventType.tally,
                 saving:      _saving,
                 onCta:       _next,
                 onSkip:      _next,
@@ -464,26 +500,35 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
     );
   }
 
-  Widget _buildStep() => switch (_step) {
-        1 => _StepName(
-              nameCtrl:          _nameCtrl,
-              category:          _category,
-              onCategoryChanged: (c) => setState(() => _category = c),
-              hasError:          _nameError,
+  // ── Step router ───────────────────────────────────────────────────────────────
+
+  Widget _buildStep() {
+    // Step 1: Name + Category — same for all types.
+    if (_step == 1) {
+      return _StepName(
+        nameCtrl:          _nameCtrl,
+        category:          _category,
+        onCategoryChanged: (c) => setState(() => _category = c),
+        hasError:          _nameError,
+      );
+    }
+
+    // Step 2: Type selection — NEW.
+    if (_step == 2) {
+      return _StepType(
+        selected:  _eventType,
+        onChanged: _onEventTypeChanged,
+      );
+    }
+
+    // Steps 3+ differ by event type.
+    if (_eventType == EventType.tally) {
+      return switch (_step) {
+        3 => _StepTallyReset(
+              selected: _resetPeriod,
+              onSelect: (p) => setState(() => _resetPeriod = p),
             ),
-        2 => _StepDate(
-              isCountingDown: _isCountingDown,
-              onTypeChanged:  _onTypeChanged,
-              calYear:   _calYear,  calMonth:  _calMonth,
-              calDay:    _calDay,   calHour:   _calHour,
-              calMinute: _calMinute,
-              onPrevMonth:   _prevMonth,
-              onNextMonth:   _nextMonth,
-              onDaySelected: (d) => setState(() => _calDay = d),
-              onTimeTap:     _pickTime,
-              formattedTime: _fmt12h(_calHour, _calMinute),
-            ),
-        3 => _StepDetails(
+        _ => _StepDetails(           // step 4 — last for tally
               noteCtrl:     _noteCtrl,
               locationCtrl: _locationCtrl,
               repeatOption: _repeatOption,
@@ -491,22 +536,260 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
               imagePath:    _imagePath,
               onImageTap:   _pickImage,
             ),
-        4 => _StepReminder(
-              isCountingDown: _isCountingDown,
-              selected:       _reminder,
-              onSelect:       (r) => setState(() => _reminder = r),
-              customWeeks:    _customWeeks,
-              customDays:     _customDays,
-              customHours:    _customHours,
-              customMins:     _customMins,
-              onWeeksChanged: (v) => setState(() => _customWeeks = v),
-              onDaysChanged:  (v) => setState(() => _customDays  = v),
-              onHoursChanged: (v) => setState(() => _customHours = v),
-              onMinsChanged:  (v) => setState(() => _customMins  = v),
-            ),
-        _ => const SizedBox.shrink(),
       };
+    }
+
+    // Countdown / Countup
+    return switch (_step) {
+      3 => _StepDate(
+            isCountingDown: _isCountingDown,
+            onTypeChanged:  _onTypeChanged,
+            calYear:   _calYear,  calMonth:  _calMonth,
+            calDay:    _calDay,   calHour:   _calHour,
+            calMinute: _calMinute,
+            onPrevMonth:   _prevMonth,
+            onNextMonth:   _nextMonth,
+            onDaySelected: (d) => setState(() => _calDay = d),
+            onTimeTap:     _pickTime,
+            formattedTime: _fmt12h(_calHour, _calMinute),
+          ),
+      4 => _StepDetails(
+            noteCtrl:     _noteCtrl,
+            locationCtrl: _locationCtrl,
+            repeatOption: _repeatOption,
+            onRepeatTap:  _showRepeatPicker,
+            imagePath:    _imagePath,
+            onImageTap:   _pickImage,
+          ),
+      _ => _StepReminder(          // step 5
+            isCountingDown: _isCountingDown,
+            selected:       _reminder,
+            onSelect:       (r) => setState(() => _reminder = r),
+            customWeeks:    _customWeeks,
+            customDays:     _customDays,
+            customHours:    _customHours,
+            customMins:     _customMins,
+            onWeeksChanged: (v) => setState(() => _customWeeks = v),
+            onDaysChanged:  (v) => setState(() => _customDays  = v),
+            onHoursChanged: (v) => setState(() => _customHours = v),
+            onMinsChanged:  (v) => setState(() => _customMins  = v),
+          ),
+    };
+  }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NEW step widgets
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Step 2: Type selection ────────────────────────────────────────────────────
+
+class _StepType extends StatelessWidget {
+  const _StepType({required this.selected, required this.onChanged});
+
+  final EventType selected;
+  final ValueChanged<EventType> onChanged;
+
+  static const _opts = [
+    (
+      type: EventType.countdown,
+      label: 'Countdown',
+      desc: 'Count down to a future date or event',
+    ),
+    (
+      type: EventType.countup,
+      label: 'Count Up',
+      desc: 'Track time elapsed since a moment',
+    ),
+    (
+      type: EventType.tally,
+      label: 'Tally',
+      desc: 'Count how many times something happens',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme  = Theme.of(context);
+    final onSurf = theme.colorScheme.onSurface;
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'How should it\ncount?',
+            style: AppTextStyles.frauncesMedium.copyWith(
+              fontSize: 32, color: onSurf,
+              fontStyle: FontStyle.italic, height: 1.18, letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 28),
+          ..._opts.map((opt) {
+            final isSel = opt.type == selected;
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                onChanged(opt.type);
+              },
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                        color: muted.withValues(alpha: 0.14), width: 0.5),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // Radio button — same style as _StepReminder
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 22, height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSel
+                              ? onSurf
+                              : muted.withValues(alpha: 0.38),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: isSel
+                          ? Center(
+                              child: Container(
+                                width: 10, height: 10,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle, color: onSurf,
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(opt.label,
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                  color: onSurf)),
+                          const SizedBox(height: 2),
+                          Text(opt.desc,
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                  color: muted)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Step 3 (tally): Reset period ──────────────────────────────────────────────
+
+class _StepTallyReset extends StatelessWidget {
+  const _StepTallyReset({required this.selected, required this.onSelect});
+
+  final ResetPeriod selected;
+  final ValueChanged<ResetPeriod> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme  = Theme.of(context);
+    final onSurf = theme.colorScheme.onSurface;
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Should it reset?',
+            style: AppTextStyles.frauncesMedium.copyWith(
+              fontSize: 32, color: onSurf,
+              fontStyle: FontStyle.italic, height: 1.18, letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Choose how often this counter resets to zero.',
+            style: AppTextStyles.bodyMedium.copyWith(
+                color: muted, height: 1.5),
+          ),
+          const SizedBox(height: 24),
+          ...ResetPeriod.values.map((period) {
+            final isSel = period == selected;
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                onSelect(period);
+              },
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                        color: muted.withValues(alpha: 0.14), width: 0.5),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 22, height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSel
+                              ? onSurf
+                              : muted.withValues(alpha: 0.38),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: isSel
+                          ? Center(
+                              child: Container(
+                                width: 10, height: 10,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle, color: onSurf,
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 16),
+                    Text(period.pickerLabel,
+                        style: AppTextStyles.bodyLarge.copyWith(color: onSurf)),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Original step widgets — preserved verbatim
+// ══════════════════════════════════════════════════════════════════════════════
 
 // ── _NavBar ───────────────────────────────────────────────────────────────────
 
@@ -608,8 +891,8 @@ class _CtaArea extends StatelessWidget {
                 disabledBackgroundColor: onSurf.withValues(alpha: 0.5),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
-                textStyle:
-                    AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w500),
+                textStyle: AppTextStyles.titleMedium
+                    .copyWith(fontWeight: FontWeight.w500),
               ),
               child: saving
                   ? SizedBox(
@@ -665,11 +948,12 @@ class _StepName extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme  = Theme.of(context);
-    final onSurf = theme.colorScheme.onSurface;
+    final theme   = Theme.of(context);
+    final onSurf  = theme.colorScheme.onSurface;
     final surfCol = theme.colorScheme.surface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
-    final error  = theme.colorScheme.error;
+    final muted   = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
+    final error   = theme.colorScheme.error;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
@@ -685,7 +969,6 @@ class _StepName extends StatelessWidget {
           ),
           const SizedBox(height: 36),
 
-          // Name input
           TextField(
             controller: nameCtrl,
             autofocus: true,
@@ -716,7 +999,6 @@ class _StepName extends StatelessWidget {
             textInputAction: TextInputAction.done,
           ),
 
-          // Error message
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 180),
             crossFadeState: hasError
@@ -733,8 +1015,6 @@ class _StepName extends StatelessWidget {
           ),
 
           const SizedBox(height: 28),
-
-          // Category label
           Text(
             'CATEGORY',
             style: AppTextStyles.labelSmall.copyWith(
@@ -743,16 +1023,19 @@ class _StepName extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Category pills
           Wrap(
             spacing: 8, runSpacing: 8,
             children: _kCategories.map((cat) {
               final sel = cat == category;
               return GestureDetector(
-                onTap: () { HapticFeedback.selectionClick(); onCategoryChanged(cat); },
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  onCategoryChanged(cat);
+                },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 9),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(100),
                     color: sel ? onSurf : Colors.transparent,
@@ -764,7 +1047,7 @@ class _StepName extends StatelessWidget {
                   child: AnimatedDefaultTextStyle(
                     duration: const Duration(milliseconds: 200),
                     style: AppTextStyles.bodyMedium.copyWith(
-                      color: sel ? surfCol : muted,
+                      color:      sel ? surfCol : muted,
                       fontWeight: FontWeight.w500,
                     ),
                     child: Text(cat),
@@ -780,13 +1063,13 @@ class _StepName extends StatelessWidget {
   }
 }
 
-// ── Step 2: Date + Time ───────────────────────────────────────────────────────
+// ── Step 3 (countdown/countup): Date + Time ───────────────────────────────────
 
 class _StepDate extends StatelessWidget {
   const _StepDate({
     required this.isCountingDown, required this.onTypeChanged,
-    required this.calYear,  required this.calMonth,
-    required this.calDay,   required this.calHour,
+    required this.calYear,   required this.calMonth,
+    required this.calDay,    required this.calHour,
     required this.calMinute,
     required this.onPrevMonth,  required this.onNextMonth,
     required this.onDaySelected, required this.onTimeTap,
@@ -804,7 +1087,8 @@ class _StepDate extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
@@ -829,14 +1113,31 @@ class _StepDate extends StatelessWidget {
             padding: const EdgeInsets.all(3),
             child: Row(
               children: [
-                Expanded(child: _TypeBtn(label: 'Counting down to', selected: isCountingDown,  onTap: () { HapticFeedback.selectionClick(); onTypeChanged(true); })),
-                Expanded(child: _TypeBtn(label: 'Counting up from', selected: !isCountingDown, onTap: () { HapticFeedback.selectionClick(); onTypeChanged(false); })),
+                Expanded(
+                  child: _TypeBtn(
+                    label:    'Counting down to',
+                    selected: isCountingDown,
+                    onTap:    () {
+                      HapticFeedback.selectionClick();
+                      onTypeChanged(true);
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _TypeBtn(
+                    label:    'Counting up from',
+                    selected: !isCountingDown,
+                    onTap:    () {
+                      HapticFeedback.selectionClick();
+                      onTypeChanged(false);
+                    },
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 24),
 
-          // Calendar
           _CalendarWidget(
             year: calYear, month: calMonth, selectedDay: calDay,
             onDaySelected: onDaySelected,
@@ -845,7 +1146,6 @@ class _StepDate extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Time picker row
           GestureDetector(
             onTap: onTimeTap,
             child: Container(
@@ -878,7 +1178,9 @@ class _StepDate extends StatelessWidget {
 }
 
 class _TypeBtn extends StatelessWidget {
-  const _TypeBtn({required this.label, required this.selected, required this.onTap});
+  const _TypeBtn({
+    required this.label, required this.selected, required this.onTap,
+  });
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -887,7 +1189,8 @@ class _TypeBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
 
     return GestureDetector(
       onTap: onTap,
@@ -898,7 +1201,8 @@ class _TypeBtn extends StatelessWidget {
           color: selected ? theme.colorScheme.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(9),
           border: selected
-              ? Border.all(color: onSurf.withValues(alpha: 0.10), width: 0.5)
+              ? Border.all(
+                  color: onSurf.withValues(alpha: 0.10), width: 0.5)
               : null,
           boxShadow: selected
               ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
@@ -908,7 +1212,7 @@ class _TypeBtn extends StatelessWidget {
         child: Text(
           label, textAlign: TextAlign.center,
           style: AppTextStyles.labelLarge.copyWith(
-            color: selected ? onSurf : muted,
+            color:      selected ? onSurf : muted,
             fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
           ),
         ),
@@ -930,17 +1234,17 @@ class _CalendarWidget extends StatelessWidget {
   final int year, month, selectedDay;
   final ValueChanged<int> onDaySelected;
   final VoidCallback onPrevMonth, onNextMonth;
-  final DateTime? minDate; // days before this are greyed-out (used for countdown)
+  final DateTime? minDate;
 
   @override
   Widget build(BuildContext context) {
-    final theme  = Theme.of(context);
-    final onSurf = theme.colorScheme.onSurface;
+    final theme   = Theme.of(context);
+    final onSurf  = theme.colorScheme.onSurface;
     final surfCol = theme.colorScheme.surface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
-    final now    = DateTime.now();
+    final muted   = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
+    final now     = DateTime.now();
 
-    // Dart weekday: Mon=1…Sun=7 → Sunday-first offset = weekday % 7
     final firstOffset = DateTime(year, month, 1).weekday % 7;
     final daysInMonth = DateTime(year, month + 1, 0).day;
     final rowCount    = ((firstOffset + daysInMonth) / 7).ceil();
@@ -959,17 +1263,20 @@ class _CalendarWidget extends StatelessWidget {
             cells.add(const Expanded(child: SizedBox(height: 36)));
             continue;
           }
-          final day       = idx - firstOffset + 1;
-          final cellDate  = DateTime(year, month, day);
-          final isDisabled = todayStart != null && cellDate.isBefore(todayStart);
-          final isSel      = day == selectedDay;
-          final isToday    = now.year == year && now.month == month && now.day == day;
+          final day        = idx - firstOffset + 1;
+          final cellDate   = DateTime(year, month, day);
+          final isDisabled = todayStart != null &&
+              cellDate.isBefore(todayStart);
+          final isSel    = day == selectedDay;
+          final isToday  = now.year == year &&
+              now.month == month && now.day == day;
 
           cells.add(Expanded(
             child: isDisabled
                 ? Container(
                     height: 36,
-                    margin: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 1, vertical: 1),
                     child: Center(
                       child: Text('$day',
                           style: AppTextStyles.bodyMedium.copyWith(
@@ -980,20 +1287,24 @@ class _CalendarWidget extends StatelessWidget {
                     onTap: () => onDaySelected(day),
                     child: Container(
                       height: 36,
-                      margin: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 1, vertical: 1),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: isSel ? onSurf : Colors.transparent,
                         border: isToday && !isSel
                             ? Border.all(
-                                color: onSurf.withValues(alpha: 0.35), width: 1.5)
+                                color: onSurf.withValues(alpha: 0.35),
+                                width: 1.5)
                             : null,
                       ),
                       child: Center(
                         child: Text('$day',
                             style: AppTextStyles.bodyMedium.copyWith(
                               color: isSel ? surfCol : onSurf,
-                              fontWeight: isSel ? FontWeight.w500 : FontWeight.w400,
+                              fontWeight: isSel
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
                             )),
                       ),
                     ),
@@ -1016,7 +1327,7 @@ class _CalendarWidget extends StatelessWidget {
         children: [
           Row(
             children: [
-              _CalNavBtn(icon: Icons.chevron_left, onTap: onPrevMonth),
+              _CalNavBtn(icon: Icons.chevron_left,  onTap: onPrevMonth),
               Expanded(
                 child: Text(
                   '${_kMonthNames[month - 1]} $year',
@@ -1035,7 +1346,8 @@ class _CalendarWidget extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Text(d,
                             textAlign: TextAlign.center,
-                            style: AppTextStyles.labelSmall.copyWith(color: muted)),
+                            style: AppTextStyles.labelSmall
+                                .copyWith(color: muted)),
                       ),
                     ))
                 .toList(),
@@ -1063,7 +1375,7 @@ class _CalNavBtn extends StatelessWidget {
   }
 }
 
-// ── Step 3: Details ───────────────────────────────────────────────────────────
+// ── Step 4 (countdown/countup) / Step 4 (tally): Details ─────────────────────
 
 class _StepDetails extends StatelessWidget {
   const _StepDetails({
@@ -1081,7 +1393,8 @@ class _StepDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
@@ -1136,11 +1449,13 @@ class _StepDetails extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.camera_alt_outlined, size: 32, color: muted),
+                          Icon(Icons.camera_alt_outlined,
+                              size: 32, color: muted),
                           const SizedBox(height: 10),
                           Text('Add a photo',
                               style: AppTextStyles.bodyMedium.copyWith(
-                                  color: muted, fontWeight: FontWeight.w500)),
+                                  color: muted,
+                                  fontWeight: FontWeight.w500)),
                         ],
                       ),
                     ),
@@ -1148,7 +1463,6 @@ class _StepDetails extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // Note
           _DetailField(
             label: 'Note',
             child: TextField(
@@ -1166,7 +1480,6 @@ class _StepDetails extends StatelessWidget {
             ),
           ),
 
-          // Repeat — tappable, shows current selection on right
           _DetailField(
             label: 'Repeat',
             onTap: onRepeatTap,
@@ -1182,7 +1495,6 @@ class _StepDetails extends StatelessWidget {
             ),
           ),
 
-          // Location
           _DetailField(
             label: 'Location',
             child: TextField(
@@ -1206,7 +1518,6 @@ class _StepDetails extends StatelessWidget {
   }
 }
 
-// Field row with label on left, child on right
 class _DetailField extends StatelessWidget {
   const _DetailField({
     required this.label, required this.child, this.onTap,
@@ -1219,7 +1530,8 @@ class _DetailField extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
 
     Widget row = Container(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1255,25 +1567,22 @@ class _DetailField extends StatelessWidget {
 
 class _DashedBorderPainter extends CustomPainter {
   const _DashedBorderPainter({
-    required this.color,
-    required this.strokeWidth,
-    required this.radius,
+    required this.color, required this.strokeWidth, required this.radius,
   })  : dashLength = 5.0,
-        gapLength = 4.0;
+        gapLength  = 4.0;
   final Color color;
   final double strokeWidth, radius, dashLength, gapLength;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+      ..color = color ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke ..strokeCap = StrokeCap.round;
     final inset = strokeWidth / 2;
     final path  = Path()
       ..addRRect(RRect.fromRectAndRadius(
-        Rect.fromLTWH(inset, inset, size.width - strokeWidth, size.height - strokeWidth),
+        Rect.fromLTWH(inset, inset,
+            size.width - strokeWidth, size.height - strokeWidth),
         Radius.circular(radius),
       ));
     for (final m in path.computeMetrics()) {
@@ -1291,7 +1600,7 @@ class _DashedBorderPainter extends CustomPainter {
       o.color != color || o.strokeWidth != strokeWidth || o.radius != radius;
 }
 
-// ── Step 4: Reminder ──────────────────────────────────────────────────────────
+// ── Step 5 (countdown/countup): Reminder ─────────────────────────────────────
 
 class _StepReminder extends StatelessWidget {
   const _StepReminder({
@@ -1314,9 +1623,9 @@ class _StepReminder extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
 
-    // Counting-up events only get the Custom option (a fixed "after" reminder)
     final options = isCountingDown
         ? _Reminder.values
         : [_Reminder.custom];
@@ -1343,12 +1652,15 @@ class _StepReminder extends StatelessWidget {
           const SizedBox(height: 24),
 
           ...options.map((opt) {
-            final isSel  = opt == selected;
+            final isSel = opt == selected;
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 GestureDetector(
-                  onTap: () { HapticFeedback.selectionClick(); onSelect(opt); },
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    onSelect(opt);
+                  },
                   behavior: HitTestBehavior.opaque,
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 18),
@@ -1365,7 +1677,8 @@ class _StepReminder extends StatelessWidget {
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: isSel
-                                  ? onSurf : muted.withValues(alpha: 0.38),
+                                  ? onSurf
+                                  : muted.withValues(alpha: 0.38),
                               width: 1.5,
                             ),
                           ),
@@ -1374,21 +1687,20 @@ class _StepReminder extends StatelessWidget {
                                   child: Container(
                                     width: 10, height: 10,
                                     decoration: BoxDecoration(
-                                      shape: BoxShape.circle, color: onSurf),
+                                        shape: BoxShape.circle,
+                                        color: onSurf),
                                   ),
                                 )
                               : null,
                         ),
                         const SizedBox(width: 16),
                         Text(opt.label,
-                            style: AppTextStyles.bodyLarge.copyWith(
-                                color: onSurf)),
+                            style: AppTextStyles.bodyLarge
+                                .copyWith(color: onSurf)),
                       ],
                     ),
                   ),
                 ),
-
-                // Custom time-box expansion
                 if (opt == _Reminder.custom && isSel)
                   _CustomReminderBoxes(
                     isCountingDown: isCountingDown,
@@ -1402,7 +1714,6 @@ class _StepReminder extends StatelessWidget {
               ],
             );
           }),
-
           const SizedBox(height: 32),
         ],
       ),
@@ -1433,8 +1744,8 @@ class _CustomReminderBoxes extends StatelessWidget {
         children: [
           Text(
             isCountingDown ? 'How long before?' : 'How long after?',
-            style: AppTextStyles.labelSmall.copyWith(
-                color: muted, letterSpacing: 0.8),
+            style: AppTextStyles.labelSmall
+                .copyWith(color: muted, letterSpacing: 0.8),
           ),
           const SizedBox(height: 12),
           Row(
@@ -1496,7 +1807,8 @@ class _TimeBoxState extends State<_TimeBox> {
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
 
     return Expanded(
       child: Column(
@@ -1520,7 +1832,8 @@ class _TimeBoxState extends State<_TimeBox> {
                     .copyWith(color: muted.withValues(alpha: 0.35)),
                 counterText: '',
                 filled: false, border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
           ),
@@ -1551,11 +1864,13 @@ class _RepeatSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: _RepeatOption.values.map((opt) {
             return ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 24),
               title: Text(opt.label,
                   style: AppTextStyles.bodyLarge.copyWith(color: onSurf)),
               trailing: opt == selected
-                  ? Icon(Icons.check, color: onSurf, size: 20) : null,
+                  ? Icon(Icons.check, color: onSurf, size: 20)
+                  : null,
               onTap: () => onSelect(opt),
             );
           }).toList(),
@@ -1576,7 +1891,8 @@ class _DoneView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
-    final muted  = theme.textTheme.bodyMedium?.color ?? onSurf.withValues(alpha: 0.5);
+    final muted  = theme.textTheme.bodyMedium?.color ??
+        onSurf.withValues(alpha: 0.5);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),

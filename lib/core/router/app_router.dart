@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../features/events/domain/event.dart';
 import '../../features/events/presentation/screens/home_screen.dart';
 import '../../features/events/presentation/screens/new_event_screen.dart';
 
@@ -33,7 +34,6 @@ GoRouter appRouter(Ref ref) {
     errorBuilder: (context, state) => _ErrorScreen(state.uri.toString()),
     routes: [
       // ── Onboarding ──────────────────────────────────────────────────────
-      // TODO: Replace _OnboardingBypass with the real OnboardingScreen.
       GoRoute(
         path: AppRoutes.onboarding,
         builder: (context, state) => const _OnboardingBypass(),
@@ -47,13 +47,17 @@ GoRouter appRouter(Ref ref) {
 
       // ── Events ──────────────────────────────────────────────────────────
 
-      // New event: slides up as a full-screen modal sheet.
+      // FAB passes an EventType as `extra` to pre-select the type step.
       GoRoute(
         path: AppRoutes.newEvent,
         pageBuilder: (context, state) => MaterialPage(
           fullscreenDialog: true,
           key: state.pageKey,
-          child: const NewEventScreen(),
+          child: NewEventScreen(
+            initialEventType: state.extra is EventType
+                ? state.extra as EventType
+                : null,
+          ),
         ),
       ),
 
@@ -102,8 +106,6 @@ Future<String?> _onboardingRedirect(
 }
 
 // ── Dev onboarding bypass ─────────────────────────────────────────────────────
-// Sets onboarding_complete = true and navigates to home.
-// Remove once the real OnboardingScreen is built.
 
 class _OnboardingBypass extends StatelessWidget {
   const _OnboardingBypass();

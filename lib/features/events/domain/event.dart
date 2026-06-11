@@ -4,19 +4,71 @@ import 'package:drift/drift.dart';
 
 enum EventFilter { upcoming, past, all, byDateAsc, byDateDesc }
 
+// ── Event type ────────────────────────────────────────────────────────────────
+
+enum EventType { countdown, countup, tally }
+
+extension EventTypeX on EventType {
+  static EventType fromDb(String v) =>
+      EventType.values.firstWhere((e) => e.name == v,
+          orElse: () => EventType.countdown);
+}
+
+// ── Reset period (tally auto-reset) ──────────────────────────────────────────
+
+enum ResetPeriod { never, daily, weekly, monthly, yearly }
+
+extension ResetPeriodX on ResetPeriod {
+  /// Short label shown as the tally item subtitle.
+  String get displayLabel => switch (this) {
+        ResetPeriod.never   => 'Never resets',
+        ResetPeriod.daily   => 'Resets daily',
+        ResetPeriod.weekly  => 'Resets weekly',
+        ResetPeriod.monthly => 'Resets monthly',
+        ResetPeriod.yearly  => 'Resets yearly',
+      };
+
+  /// Label used in the creation-flow picker.
+  String get pickerLabel => switch (this) {
+        ResetPeriod.never   => 'Never',
+        ResetPeriod.daily   => 'Daily',
+        ResetPeriod.weekly  => 'Weekly',
+        ResetPeriod.monthly => 'Monthly',
+        ResetPeriod.yearly  => 'Yearly',
+      };
+
+  static ResetPeriod fromDb(String? v) => v == null
+      ? ResetPeriod.never
+      : ResetPeriod.values.firstWhere((e) => e.name == v,
+            orElse: () => ResetPeriod.never);
+}
+
 // ── Drift table definition ────────────────────────────────────────────────────
 
 @DataClassName('Event')
 class Events extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get title => text()();
-  TextColumn get subtitle => text().nullable()();
-  TextColumn get category => text()();
-  DateTimeColumn get targetDate => dateTime()();
+  IntColumn get id         => integer().autoIncrement()();
+  TextColumn get title     => text()();
+  TextColumn get subtitle  => text().nullable()();
+  TextColumn get category  => text()();
+
+  /// 'countdown' | 'countup' | 'tally'
+  TextColumn get eventType =>
+      text().withDefault(const Constant('countdown'))();
+
+  /// Null only for tally items.
+  DateTimeColumn get targetDate => dateTime().nullable()();
+
   IntColumn get colorValue =>
       integer().withDefault(const Constant(0xFF5C6BC0))();
-  TextColumn get photoPath => text().nullable()();
-  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  TextColumn get photoPath  => text().nullable()();
+  IntColumn get sortOrder   => integer().withDefault(const Constant(0))();
+
+  // ── Tally-only ───────────────────────────────────────────────────────────
+  IntColumn    get tallyCount  => integer().withDefault(const Constant(0))();
+  TextColumn   get resetPeriod => text().nullable()();
+  DateTimeColumn get lastResetAt => dateTime().nullable()();
+
   DateTimeColumn get createdAt =>
       dateTime().withDefault(currentDateAndTime)();
 }
