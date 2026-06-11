@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/events/domain/event.dart';
 import '../../features/events/presentation/screens/home_screen.dart';
-import '../../features/events/presentation/screens/new_event_screen.dart';
+import '../../features/events/presentation/screens/new_event/new_event_screen.dart';
 
 part 'app_router.g.dart';
 
