@@ -72,3 +72,32 @@ class Events extends Table {
   DateTimeColumn get createdAt =>
       dateTime().withDefault(currentDateAndTime)();
 }
+
+// ── Count-up filter state enum ─────────────────────────────────────────────────
+
+enum CountUpFilter { running, upcoming, all }
+
+extension CountUpFilterX on CountUpFilter {
+  String get label => switch (this) {
+    CountUpFilter.running  => 'Running',
+    CountUpFilter.upcoming => 'Upcoming',
+    CountUpFilter.all      => 'All',
+  };
+
+  String get emptyMessage => switch (this) {
+    CountUpFilter.running  => 'Nothing running yet.',
+    CountUpFilter.upcoming => 'No upcoming count-up events.',
+    CountUpFilter.all      => 'No count-up events yet.\nTap + to add one.',
+  };
+}
+
+// ── Tally view mode ───────────────────────────────────────────────────────────
+
+enum TallyViewMode { category, all }
+
+extension TallyViewModeX on TallyViewMode {
+  String get label => switch (this) {
+    TallyViewMode.category => 'Category',
+    TallyViewMode.all      => 'All',
+  };
+}

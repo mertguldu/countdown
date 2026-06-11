@@ -77,3 +77,41 @@ final groupedTallyProvider =
 
 final flatTallyProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
     ref.watch(eventRepositoryProvider).watchByType(EventType.tally));
+
+// ── Count-up filter state ─────────────────────────────────────────────────────
+
+@riverpod
+class CountUpFilterNotifier extends _$CountUpFilterNotifier {
+  @override
+  CountUpFilter build() => CountUpFilter.running;
+
+  void select(CountUpFilter f) => state = f;
+}
+
+/// Grouped count-up events, filtered by running / upcoming / all.
+final groupedCountupFilteredProvider =
+    StreamProvider.autoDispose<Map<String, List<Event>>>((ref) {
+  final filter = ref.watch(countUpFilterProvider);
+  final repo   = ref.watch(eventRepositoryProvider);
+  return repo.watchCountUpFiltered(filter).map((events) {
+    final grouped = <String, List<Event>>{};
+    for (final e in events) {
+      grouped.putIfAbsent(e.category, () => []).add(e);
+    }
+    return grouped;
+  });
+});
+
+// ── Tally view mode ───────────────────────────────────────────────────────────
+
+@riverpod
+class TallyViewModeNotifier extends _$TallyViewModeNotifier {
+  @override
+  TallyViewMode build() => TallyViewMode.category;
+
+  void select(TallyViewMode m) => state = m;
+}
+
+/// Tally events ordered by createdAt DESC — used for the All flat view.
+final flatTallyAllProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
+    ref.watch(eventRepositoryProvider).watchTallyAll());

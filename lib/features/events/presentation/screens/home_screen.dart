@@ -68,6 +68,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _isEditing = true;
       _editTab   = EditTab.active;
     });
+    // Snap tally to Category view — dragging without group anchors is confusing.
+    if (_activeTab == _HomeTab.tally) {
+      ref.read(tallyViewModeProvider.notifier).select(TallyViewMode.category);
+    }
   }
 
   void _exitEditMode() {
@@ -81,8 +85,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _onFabPressed() {
     HapticFeedback.mediumImpact();
-    // Pre-select the event type based on which tab is active so the wizard
-    // opens on the right branch.
     final preselect = switch (_activeTab) {
       _HomeTab.events  => EventType.countdown,
       _HomeTab.countUp => EventType.countup,
@@ -116,7 +118,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   children: [
                     _Header(
                       isEditing:      _isEditing,
-                      showEditButton: true,   // edit available on all tabs
+                      showEditButton: true,
                       onEditTap:      _toggleEdit,
                       onSettingsTap:  () => HapticFeedback.selectionClick(),
                     ),
@@ -144,17 +146,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     children: [
                       // Tab 1 — Countdown events
                       EventsScreen(
-                        key:              const ValueKey('events'),
-                        isEditing:        _isEditing && _activeTab == _HomeTab.events,
-                        editTab:          _editTab,
-                        eventTypeFilter:  EventType.countdown,
+                        key:             const ValueKey('events'),
+                        isEditing:       _isEditing && _activeTab == _HomeTab.events,
+                        editTab:         _editTab,
+                        eventTypeFilter: EventType.countdown,
                       ),
-                      // Tab 2 — Count-up events (same screen, different filter)
+                      // Tab 2 — Count-up events
                       EventsScreen(
-                        key:              const ValueKey('countup'),
-                        isEditing:        _isEditing && _activeTab == _HomeTab.countUp,
-                        editTab:          EditTab.active,
-                        eventTypeFilter:  EventType.countup,
+                        key:             const ValueKey('countup'),
+                        isEditing:       _isEditing && _activeTab == _HomeTab.countUp,
+                        editTab:         EditTab.active,
+                        eventTypeFilter: EventType.countup,
                       ),
                       // Tab 3 — Tally counters
                       TallyScreen(
@@ -176,7 +178,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               clipBehavior: Clip.none,
               children: [
 
-                // ── Normal bar ────────────────────────────────────────────────
+                // ── Normal bar (FAB + pills) ──────────────────────────────────
                 IgnorePointer(
                   ignoring: _isEditing,
                   child: AnimatedOpacity(
@@ -201,29 +203,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        // Always in the layout so the FAB stays anchored.
-                        // Faded out and non-interactive on non-events tabs.
-                        IgnorePointer(
-                          ignoring: _activeTab != _HomeTab.events,
-                          child: AnimatedOpacity(
-                            opacity:  _activeTab == _HomeTab.events ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 220),
-                            curve:    Curves.easeInOut,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 30),
+
+                        // Pill area — all three bars overlap in a Stack so
+                        // the Column height never shifts as you switch tabs.
+                        Stack(
+                          children: [
+                            _PillLayer(
+                              visible: _activeTab == _HomeTab.events,
                               child: FilterPills(
                                 selected: ref.watch(eventFilterProvider),
-                                onSelect: ref.read(eventFilterProvider.notifier).select,
+                                onSelect: ref
+                                    .read(eventFilterProvider.notifier)
+                                    .select,
                               ),
                             ),
-                          ),
+                            _PillLayer(
+                              visible: _activeTab == _HomeTab.countUp,
+                              child: CountUpFilterPills(
+                                selected: ref.watch(countUpFilterProvider),
+                                onSelect: ref
+                                    .read(countUpFilterProvider.notifier)
+                                    .select,
+                              ),
+                            ),
+                            _PillLayer(
+                              visible: _activeTab == _HomeTab.tally,
+                              child: TallyViewPills(
+                                selected: ref.watch(tallyViewModeProvider),
+                                onSelect: ref
+                                    .read(tallyViewModeProvider.notifier)
+                                    .select,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ),
 
-                // ── Edit tab bar (Active / Finished) — events tab only ─────────
+                // ── Edit bar: Events (Active / Finished) ──────────────────────
                 Positioned(
                   bottom: 0, left: 0, right: 0,
                   child: IgnorePointer(
@@ -245,6 +264,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
 
+                // ── Edit bar: Tally (Category / All) ──────────────────────────
+                Positioned(
+                  bottom: 0, left: 0, right: 0,
+                  child: IgnorePointer(
+                    ignoring: !(_isEditing && _activeTab == _HomeTab.tally),
+                    child: AnimatedOpacity(
+                      opacity:  (_isEditing && _activeTab == _HomeTab.tally)
+                          ? 1.0
+                          : 0.0,
+                      duration: const Duration(milliseconds: 220),
+                      curve:    Curves.easeInOut,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 30),
+                        child: _TallyEditBar(
+                          selected: ref.watch(tallyViewModeProvider),
+                          onSelect: ref
+                              .read(tallyViewModeProvider.notifier)
+                              .select,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
               ],
             ),
           ),
@@ -254,13 +297,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+// ── _PillLayer ────────────────────────────────────────────────────────────────
+
+/// Wraps a pill bar so all three can overlap in a Stack — only the active
+/// one is visible and interactive. Includes the horizontal padding so all
+/// three bars stay perfectly aligned.
+class _PillLayer extends StatelessWidget {
+  const _PillLayer({required this.visible, required this.child});
+
+  final bool   visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    ignoring: !visible,
+    child: AnimatedOpacity(
+      opacity:  visible ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 220),
+      curve:    Curves.easeInOut,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        child:  child,
+      ),
+    ),
+  );
+}
+
 // ── _EditTabBar ───────────────────────────────────────────────────────────────
 
 class _EditTabBar extends StatelessWidget {
   const _EditTabBar({required this.selected, required this.onSelect});
 
-  final EditTab selected;
-  final ValueChanged<EditTab> onSelect;
+  final EditTab                selected;
+  final ValueChanged<EditTab>  onSelect;
 
   static const double _kRadius = 20;
 
@@ -317,6 +386,69 @@ class _EditTabBar extends StatelessWidget {
   }
 }
 
+// ── _TallyEditBar ─────────────────────────────────────────────────────────────
+
+class _TallyEditBar extends StatelessWidget {
+  const _TallyEditBar({required this.selected, required this.onSelect});
+
+  final TallyViewMode               selected;
+  final ValueChanged<TallyViewMode> onSelect;
+
+  static const double _kRadius = 20;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_kRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 28, offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8, offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_kRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(_kRadius),
+              border: Border.all(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: TallyViewMode.values.map((mode) {
+                return Expanded(
+                  child: _EditTabPill(
+                    label:    mode.label,
+                    selected: selected == mode,
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onSelect(mode);
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── _EditTabPill ──────────────────────────────────────────────────────────────
 
 class _EditTabPill extends StatefulWidget {
@@ -326,8 +458,8 @@ class _EditTabPill extends StatefulWidget {
     required this.onTap,
   });
 
-  final String label;
-  final bool selected;
+  final String       label;
+  final bool         selected;
   final VoidCallback onTap;
 
   @override
@@ -337,7 +469,7 @@ class _EditTabPill extends StatefulWidget {
 class _EditTabPillState extends State<_EditTabPill>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _scale;
+  late final Animation<double>   _scale;
 
   @override
   void initState() {
@@ -429,7 +561,7 @@ class _Header extends StatelessWidget {
     required this.onSettingsTap,
   });
 
-  final bool isEditing, showEditButton;
+  final bool         isEditing, showEditButton;
   final VoidCallback onEditTap, onSettingsTap;
 
   @override
@@ -501,7 +633,8 @@ class _LogoPlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
         color: onSurface.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: onSurface.withValues(alpha: 0.08), width: 1),
+        border: Border.all(
+            color: onSurface.withValues(alpha: 0.08), width: 1),
       ),
       child: Icon(
         Icons.widgets_outlined, size: 17,
@@ -513,7 +646,6 @@ class _LogoPlaceholder extends StatelessWidget {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-// Three tabs: Events (countdown), Count Up, Tally.
 enum _HomeTab { events, countUp, tally }
 
 extension _HomeTabX on _HomeTab {
@@ -533,8 +665,9 @@ extension EditTabX on EditTab {
 
 class _TabRow extends StatelessWidget {
   const _TabRow({required this.active, required this.onSelect});
-  final _HomeTab active;
-  final ValueChanged<_HomeTab> onSelect;
+
+  final _HomeTab                active;
+  final ValueChanged<_HomeTab>  onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -565,8 +698,9 @@ class _TabItem extends StatelessWidget {
     required this.selected,
     required this.onTap,
   });
-  final String label;
-  final bool selected;
+
+  final String       label;
+  final bool         selected;
   final VoidCallback onTap;
 
   @override

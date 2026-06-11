@@ -12,6 +12,9 @@ import '../widgets/tally_list_item.dart';
 /// Tab 3 — Tally counters grouped by category.
 /// Supports the same drag-to-reorder / delete edit mode as EventsScreen,
 /// but without the active/finished distinction.
+/// Normal mode: respects [TallyViewMode] — Category (grouped) or All (flat,
+/// newest first). Edit mode: Category view supports drag-to-reorder; All view
+/// shows a flat deletable list (no reorder).
 class TallyScreen extends ConsumerStatefulWidget {
   const TallyScreen({super.key, this.isEditing = false});
   final bool isEditing;
@@ -22,8 +25,9 @@ class TallyScreen extends ConsumerStatefulWidget {
 
 class _TallyScreenState extends ConsumerState<TallyScreen> {
   // ── Edit-mode local state ─────────────────────────────────────────────────
-  List<({String category, List<Event> events})> _groups = [];
-  bool _editInitialized = false;
+  List<({String category, List<Event> events})> _groups         = [];
+  List<Event>                                   _flatEditEvents  = [];
+  bool                                          _editInitialized = false;
   ProviderSubscription<AsyncValue<List<Event>>>? _flatSub;
 
   @override
@@ -49,7 +53,7 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
   // ── Auto-reset ────────────────────────────────────────────────────────────
 
   Future<void> _runAutoResets() async {
-    final repo = ref.read(eventRepositoryProvider);
+    final repo   = ref.read(eventRepositoryProvider);
     final events = await repo.watchByType(EventType.tally).first;
     await repo.processAutoResets(events);
   }
@@ -81,10 +85,15 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
   void _tearDown() {
     _flatSub?.close();
     _flatSub = null;
-    setState(() { _editInitialized = false; _groups = []; });
+    setState(() {
+      _editInitialized = false;
+      _groups          = [];
+      _flatEditEvents  = [];
+    });
   }
 
   void _initFromEvents(List<Event> events) {
+    // Grouped view — preserves manual sort order.
     final map = <String, List<Event>>{};
     for (final e in events) {
       (map[e.category] ??= []).add(e);
@@ -92,6 +101,10 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
     _groups = map.entries
         .map((e) => (category: e.key, events: [...e.value]))
         .toList();
+
+    // Flat edit view — newest first.
+    _flatEditEvents = [...events]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   // ── Reorder ───────────────────────────────────────────────────────────────
@@ -165,6 +178,8 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
               ))
           .where((g) => g.events.isNotEmpty)
           .toList();
+      _flatEditEvents =
+          _flatEditEvents.where((e) => e.id != event.id).toList();
     });
 
     await ref.read(eventRepositoryProvider).deleteEvent(event.id);
@@ -179,10 +194,23 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final viewMode = ref.watch(tallyViewModeProvider);
+
+    // ── Edit mode ────────────────────────────────────────────────────────────
     if (widget.isEditing) {
       if (!_editInitialized) {
         return const Center(child: CircularProgressIndicator.adaptive());
       }
+
+      // All view — flat deletable list, no drag-to-reorder.
+      if (viewMode == TallyViewMode.all) {
+        return _FlatTallyEditView(
+          events:   _flatEditEvents,
+          onDelete: _onDelete,
+        );
+      }
+
+      // Category view — grouped drag-to-reorder.
       if (_groups.isEmpty) return const _EmptyState();
       return _GroupedEditView(
         groups:          _groups,
@@ -193,6 +221,29 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
       );
     }
 
+    // ── Normal mode ──────────────────────────────────────────────────────────
+
+    // All view — flat list, newest first.
+    if (viewMode == TallyViewMode.all) {
+      return ref.watch(flatTallyAllProvider).when(
+        data: (events) => events.isEmpty
+            ? const _EmptyState()
+            : _FlatTallyList(
+                events:      events,
+                onIncrement: (id) => _adjust(id, 1),
+                onDecrement: (id) => _adjust(id, -1),
+              ),
+        loading: () =>
+            const Center(child: CircularProgressIndicator.adaptive()),
+        error: (e, _) => Center(
+          child: Text('Error: $e',
+              style: AppTextStyles.bodyMedium.copyWith(
+                  color: Theme.of(context).colorScheme.error)),
+        ),
+      );
+    }
+
+    // Category view — grouped.
     return ref.watch(groupedTallyProvider).when(
       data: (grouped) => grouped.isEmpty
           ? const _EmptyState()
@@ -222,8 +273,8 @@ class _TallyList extends StatelessWidget {
   });
 
   final Map<String, List<Event>> grouped;
-  final ValueChanged<int> onIncrement;
-  final ValueChanged<int> onDecrement;
+  final ValueChanged<int>        onIncrement;
+  final ValueChanged<int>        onDecrement;
 
   @override
   Widget build(BuildContext context) {
@@ -253,6 +304,59 @@ class _TallyList extends StatelessWidget {
   }
 }
 
+// ── _FlatTallyList ────────────────────────────────────────────────────────────
+
+class _FlatTallyList extends StatelessWidget {
+  const _FlatTallyList({
+    required this.events,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
+
+  final List<Event>       events;
+  final ValueChanged<int> onIncrement;
+  final ValueChanged<int> onDecrement;
+
+  @override
+  Widget build(BuildContext context) => ListView.separated(
+    padding: const EdgeInsets.only(top: 8, bottom: 120),
+    itemCount: events.length,
+    separatorBuilder: (_, __) => const _Divider(),
+    itemBuilder: (ctx, i) => TallyListItem(
+      event:       events[i],
+      onIncrement: () => onIncrement(events[i].id),
+      onDecrement: () => onDecrement(events[i].id),
+    ),
+  );
+}
+
+// ── _FlatTallyEditView ────────────────────────────────────────────────────────
+
+class _FlatTallyEditView extends StatelessWidget {
+  const _FlatTallyEditView({
+    required this.events,
+    required this.onDelete,
+  });
+
+  final List<Event>                  events;
+  final Future<void> Function(Event) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (events.isEmpty) return const _EmptyState();
+    return ListView.separated(
+      padding: const EdgeInsets.only(top: 8, bottom: 120),
+      itemCount: events.length,
+      separatorBuilder: (_, __) => const _Divider(),
+      itemBuilder: (ctx, i) => TallyListItem(
+        event:     events[i],
+        isEditing: true,
+        onDelete:  () => onDelete(events[i]),
+      ),
+    );
+  }
+}
+
 // ── _GroupedEditView ──────────────────────────────────────────────────────────
 
 class _GroupedEditView extends StatelessWidget {
@@ -265,10 +369,10 @@ class _GroupedEditView extends StatelessWidget {
   });
 
   final List<({String category, List<Event> events})> groups;
-  final void Function(int) onMoveGroupUp;
-  final void Function(int) onMoveGroupDown;
-  final void Function(int, int, int) onReorderItem;
-  final Future<void> Function(Event) onDelete;
+  final void Function(int)                            onMoveGroupUp;
+  final void Function(int)                            onMoveGroupDown;
+  final void Function(int, int, int)                  onReorderItem;
+  final Future<void> Function(Event)                  onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -279,12 +383,12 @@ class _GroupedEditView extends StatelessWidget {
 
       slivers.add(SliverToBoxAdapter(
         child: _EditGroupHeader(
-          key:          ValueKey('hdr_${g.category}'),
-          category:     g.category,
-          canMoveUp:    capturedGi > 0,
-          canMoveDown:  capturedGi < groups.length - 1,
-          onMoveUp:     () => onMoveGroupUp(capturedGi),
-          onMoveDown:   () => onMoveGroupDown(capturedGi),
+          key:         ValueKey('hdr_${g.category}'),
+          category:    g.category,
+          canMoveUp:   capturedGi > 0,
+          canMoveDown: capturedGi < groups.length - 1,
+          onMoveUp:    () => onMoveGroupUp(capturedGi),
+          onMoveDown:  () => onMoveGroupDown(capturedGi),
         ),
       ));
 
@@ -337,8 +441,8 @@ class _EditGroupHeader extends StatelessWidget {
     required this.onMoveDown,
   });
 
-  final String category;
-  final bool   canMoveUp, canMoveDown;
+  final String       category;
+  final bool         canMoveUp, canMoveDown;
   final VoidCallback onMoveUp, onMoveDown;
 
   @override
@@ -363,10 +467,10 @@ class _EditGroupHeader extends StatelessWidget {
 
 class _MoveBtn extends StatelessWidget {
   const _MoveBtn(this.icon, this.enabled, this.onTap, this.activeColor);
-  final IconData icon;
-  final bool     enabled;
+  final IconData     icon;
+  final bool         enabled;
   final VoidCallback onTap;
-  final Color    activeColor;
+  final Color        activeColor;
 
   @override
   Widget build(BuildContext context) => GestureDetector(

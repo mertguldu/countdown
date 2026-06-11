@@ -68,6 +68,45 @@ class EventRepository {
             ]))
           .watch();
 
+  /// Count-up events filtered by running / upcoming / all status.
+  Stream<List<Event>> watchCountUpFiltered(CountUpFilter filter) {
+    final now      = DateTime.now();
+    final q        = _db.select(_db.events);
+    final isCountup = (Events t) => t.eventType.equals(EventType.countup.name);
+
+    switch (filter) {
+      case CountUpFilter.running:
+        q
+          ..where((t) => isCountup(t) & t.targetDate.isSmallerOrEqualValue(now))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),
+            (t) => OrderingTerm.desc(t.targetDate),
+          ]);
+      case CountUpFilter.upcoming:
+        q
+          ..where((t) => isCountup(t) & t.targetDate.isBiggerThanValue(now))
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),
+            (t) => OrderingTerm.asc(t.targetDate),
+          ]);
+      case CountUpFilter.all:
+        q
+          ..where(isCountup)
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.sortOrder),
+            (t) => OrderingTerm.asc(t.targetDate),
+          ]);
+    }
+    return q.watch();
+  }
+
+  /// Tally events ordered by createdAt DESC — newest first (All view).
+  Stream<List<Event>> watchTallyAll() =>
+      (_db.select(_db.events)
+            ..where((t) => t.eventType.equals(EventType.tally.name))
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .watch();
+
   // ── CRUD ─────────────────────────────────────────────────────────────────
 
   Future<int> insertEvent(EventsCompanion companion) =>

@@ -16,9 +16,9 @@ enum EditTab { active, finished }
 class EventsScreen extends ConsumerStatefulWidget {
   const EventsScreen({
     super.key,
-    this.isEditing        = false,
-    this.editTab          = EditTab.active,
-    this.eventTypeFilter  = EventType.countdown,
+    this.isEditing       = false,
+    this.editTab         = EditTab.active,
+    this.eventTypeFilter = EventType.countdown,
   });
 
   final bool      isEditing;
@@ -109,9 +109,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     }
 
     // Countdown: split into active (future date) and finished (past date).
-    final now        = DateTime.now();
-    final activeMap  = <String, List<Event>>{};
-    final finished   = <Event>[];
+    final now       = DateTime.now();
+    final activeMap = <String, List<Event>>{};
+    final finished  = <Event>[];
     for (final e in events) {
       final td = e.targetDate;
       if (td != null && td.isAfter(now)) {
@@ -161,7 +161,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     var order = 0;
 
     if (_isCountup) {
-      // Simple linear order — no past/active split.
       for (final g in groups) {
         for (final e in g.events) {
           updates.add((id: e.id, sortOrder: order++));
@@ -224,6 +223,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     // ── Edit mode ────────────────────────────────────────────────────────────
     if (widget.isEditing) {
       if (!_editInitialized) {
@@ -233,7 +233,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       // Countup: no active/finished tabs — just one grouped edit view.
       if (_isCountup) {
         return _groups.isEmpty
-            ? const _EmptyState(message: 'No count-up events yet.\nTap + to add one.')
+            ? const _EmptyState(
+                message: 'No count-up events yet.\nTap + to add one.')
             : _GroupedEditView(
                 key:             const ValueKey('countup_edit'),
                 groups:          _groups,
@@ -275,12 +276,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
     // ── Normal mode ──────────────────────────────────────────────────────────
 
-    // Countup — grouped, no filter pills.
+    // Countup — grouped, filtered by Running / Upcoming / All.
     if (_isCountup) {
-      return ref.watch(groupedCountupProvider).when(
+      final countUpFilter = ref.watch(countUpFilterProvider);
+      return ref.watch(groupedCountupFilteredProvider).when(
         data: (grouped) => grouped.isEmpty
-            ? const _EmptyState(
-                message: 'No count-up events yet.\nTap + to add one.')
+            ? _EmptyState(message: countUpFilter.emptyMessage)
             : _EventList(grouped: grouped, eventType: EventType.countup),
         loading: () =>
             const Center(child: CircularProgressIndicator.adaptive()),
@@ -288,20 +289,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       );
     }
 
-    // Countdown — check filter for date-sorted flat view.
-    final filter = ref.watch(eventFilterProvider);
-    if (filter == EventFilter.byDateAsc ||
-        filter == EventFilter.byDateDesc) {
-      return ref.watch(byDateEventsProvider).when(
-        data: (events) => events.isEmpty
-            ? const _EmptyState(message: 'No events yet.')
-            : _FlatDateList(events: events),
-        loading: () =>
-            const Center(child: CircularProgressIndicator.adaptive()),
-        error: (e, _) => _ErrorState('$e'),
-      );
-    }
-
+    // Countdown — grouped, filtered by Upcoming / Past / All.
     return ref.watch(groupedEventsProvider).when(
       data: (grouped) => grouped.isEmpty
           ? const _EmptyState(message: 'No events yet.\nTap + to add one.')
@@ -316,10 +304,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 // ── _EventList ────────────────────────────────────────────────────────────────
 
 class _EventList extends StatelessWidget {
-  const _EventList({required this.grouped, this.eventType = EventType.countdown});
+  const _EventList({
+    required this.grouped,
+    this.eventType = EventType.countdown,
+  });
 
   final Map<String, List<Event>> grouped;
-  final EventType eventType;
+  final EventType                eventType;
 
   @override
   Widget build(BuildContext context) {
@@ -349,22 +340,6 @@ class _EventList extends StatelessWidget {
   }
 }
 
-// ── _FlatDateList ─────────────────────────────────────────────────────────────
-
-class _FlatDateList extends StatelessWidget {
-  const _FlatDateList({required this.events});
-  final List<Event> events;
-
-  @override
-  Widget build(BuildContext context) => ListView.separated(
-    padding: const EdgeInsets.only(top: 8, bottom: 120),
-    itemCount: events.length,
-    separatorBuilder: (_, __) => const _Divider(),
-    itemBuilder: (ctx, i) =>
-        EventListItem(event: events[i], onTap: () {}),
-  );
-}
-
 // ── _GroupedEditView ──────────────────────────────────────────────────────────
 
 class _GroupedEditView extends StatelessWidget {
@@ -379,11 +354,11 @@ class _GroupedEditView extends StatelessWidget {
   });
 
   final List<({String category, List<Event> events})> groups;
-  final EventType eventType;
-  final void Function(int) onMoveGroupUp;
-  final void Function(int) onMoveGroupDown;
-  final void Function(int, int, int) onReorderItem;
-  final Future<void> Function(Event) onDelete;
+  final EventType                                     eventType;
+  final void Function(int)                            onMoveGroupUp;
+  final void Function(int)                            onMoveGroupDown;
+  final void Function(int, int, int)                  onReorderItem;
+  final Future<void> Function(Event)                  onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -449,7 +424,7 @@ class _FinishedEditView extends StatelessWidget {
     required this.onDelete,
   });
 
-  final List<Event> events;
+  final List<Event>                  events;
   final Future<void> Function(Event) onDelete;
 
   @override
@@ -482,8 +457,8 @@ class _EditGroupHeader extends StatelessWidget {
     required this.onMoveDown,
   });
 
-  final String category;
-  final bool   canMoveUp, canMoveDown;
+  final String       category;
+  final bool         canMoveUp, canMoveDown;
   final VoidCallback onMoveUp, onMoveDown;
 
   @override
@@ -508,10 +483,11 @@ class _EditGroupHeader extends StatelessWidget {
 
 class _MoveBtn extends StatelessWidget {
   const _MoveBtn(this.icon, this.enabled, this.onTap, this.activeColor);
-  final IconData icon;
-  final bool     enabled;
+
+  final IconData     icon;
+  final bool         enabled;
   final VoidCallback onTap;
-  final Color    activeColor;
+  final Color        activeColor;
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -531,7 +507,8 @@ class _CategoryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
+    final muted =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
       child: Text(label.toUpperCase(),
@@ -557,7 +534,8 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.40);
+    final muted =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.40);
     return Center(
       child: Text(message,
           textAlign: TextAlign.center,
