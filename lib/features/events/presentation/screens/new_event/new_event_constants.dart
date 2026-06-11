@@ -1,4 +1,21 @@
 // new_event_constants.dart
+import 'package:flutter/material.dart';
+import '../../../domain/event.dart'; 
+
+class EventTypeOption {
+  final EventType type;
+  final IconData icon;
+  final String label;
+  final String desc;
+
+  const EventTypeOption(this.type, this.icon, this.label, this.desc);
+}
+
+const List<EventTypeOption> kEventTypeOptions = [
+  EventTypeOption(EventType.countdown, Icons.hourglass_bottom, 'Count-Down', 'Count down to a future date or event'),
+  EventTypeOption(EventType.countup, Icons.timelapse, 'Count-Up', 'Track time elapsed since a moment'),
+  EventTypeOption(EventType.tally, Icons.add_circle_outline, 'Counter', 'Count how many times something happens'),
+];
 
 enum Reminder {
   oneWeek('1 week before'),

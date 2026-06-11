@@ -168,12 +168,6 @@ class StepType extends StatelessWidget {
   final EventType selected;
   final ValueChanged<EventType> onChanged;
 
-  static const _opts = [
-    (type: EventType.countdown, icon: Icons.hourglass_bottom, label: 'Countdown', desc: 'Count down to a future date or event'),
-    (type: EventType.countup, icon: Icons.timelapse, label: 'Count Up', desc: 'Track time elapsed since a moment'),
-    (type: EventType.tally, icon: Icons.add_circle_outline, label: 'Tally', desc: 'Count how many times something happens'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -193,7 +187,7 @@ class StepType extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          ..._opts.map((opt) {
+          ...kEventTypeOptions.map((opt) {
             final isSel = opt.type == selected;
             return GestureDetector(
               onTap: () {

@@ -103,10 +103,26 @@ class CustomReminderBoxes extends StatelessWidget {
 
   String get _summary {
     final parts = <String>[];
-    if (weeks == 1) parts.add('1 week'); else if (weeks > 1) parts.add('$weeks weeks');
-    if (days == 1) parts.add('1 day'); else if (days > 1) parts.add('$days days');
-    if (hours == 1) parts.add('1 hour'); else if (hours > 1) parts.add('$hours hours');
-    if (mins == 1) parts.add('1 min'); else if (mins > 1) parts.add('$mins mins');
+    if (weeks == 1) {
+      parts.add('1 week');
+    } else if (weeks > 1) {
+      parts.add('$weeks weeks');
+    }
+    if (days == 1) {
+      parts.add('1 day');
+    } else if (days > 1) {
+      parts.add('$days days');
+    }
+    if (hours == 1) {
+      parts.add('1 hour');
+    } else if (hours > 1) {
+      parts.add('$hours hours');
+    }
+    if (mins == 1) {
+      parts.add('1 min');
+    } else if (mins > 1) {
+      parts.add('$mins mins');
+    }
 
     if (parts.isEmpty) return isCountingDown ? 'No reminder set' : 'No notification set';
 
