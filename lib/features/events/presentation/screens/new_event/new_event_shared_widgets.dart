@@ -365,10 +365,11 @@ class RepeatSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final onSurf = theme.colorScheme.onSurface;
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: RepeatOption.values.map((opt) {
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 24),

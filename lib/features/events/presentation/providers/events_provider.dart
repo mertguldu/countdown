@@ -8,8 +8,6 @@ import '../../domain/event.dart';
 part 'events_provider.g.dart';
 
 // ── Filter state ──────────────────────────────────────────────────────────────
-// @riverpod on EventFilterNotifier → generator emits `eventFilterProvider`
-// (strips the "Notifier" suffix). Matches the existing .g.dart.
 
 @riverpod
 class EventFilterNotifier extends _$EventFilterNotifier {
@@ -18,6 +16,15 @@ class EventFilterNotifier extends _$EventFilterNotifier {
 
   void select(EventFilter f) => state = f;
 }
+
+// ── Single event (detail sheet) ───────────────────────────────────────────────
+
+/// Watches one event by ID. Emits null when deleted.
+/// autoDispose + family ensures the DB subscription is released when the
+/// detail sheet closes.
+final eventByIdProvider =
+    StreamProvider.autoDispose.family<Event?, int>((ref, id) =>
+        ref.watch(eventRepositoryProvider).watchById(id));
 
 // ── Countdown events (Events tab) ─────────────────────────────────────────────
 
@@ -34,11 +41,9 @@ final groupedEventsProvider =
   });
 });
 
-/// Flat countdown stream — edit-mode initialisation.
 final flatEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
     ref.watch(eventRepositoryProvider).watchFiltered(EventFilter.all));
 
-/// Flat chronological stream — Date ↑ / ↓ view.
 final byDateEventsProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
     ref
         .watch(eventRepositoryProvider)
@@ -88,7 +93,6 @@ class CountUpFilterNotifier extends _$CountUpFilterNotifier {
   void select(CountUpFilter f) => state = f;
 }
 
-/// Grouped count-up events, filtered by running / upcoming / all.
 final groupedCountupFilteredProvider =
     StreamProvider.autoDispose<Map<String, List<Event>>>((ref) {
   final filter = ref.watch(countUpFilterProvider);
@@ -112,6 +116,5 @@ class TallyViewModeNotifier extends _$TallyViewModeNotifier {
   void select(TallyViewMode m) => state = m;
 }
 
-/// Tally events ordered by createdAt DESC — used for the All flat view.
 final flatTallyAllProvider = StreamProvider.autoDispose<List<Event>>((ref) =>
     ref.watch(eventRepositoryProvider).watchTallyAll());

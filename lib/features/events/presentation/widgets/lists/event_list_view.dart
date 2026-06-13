@@ -1,4 +1,5 @@
 import 'package:countdown/core/database/database.dart';
+import 'package:countdown/features/events/presentation/screens/event_detail_sheet.dart';
 import 'package:flutter/material.dart';
 
 import '../../../domain/event.dart';
@@ -23,7 +24,7 @@ class EventListView extends StatelessWidget {
           top: 8, bottom: MediaQuery.of(context).padding.bottom),
       itemCount: entries.length,
       itemBuilder: (ctx, i) {
-        final cat = entries[i].key;
+        final cat    = entries[i].key;
         final events = entries[i].value;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -31,9 +32,9 @@ class EventListView extends StatelessWidget {
             CategoryHeader(cat),
             for (int j = 0; j < events.length; j++) ...[
               EventListItem(
-                event: events[j],
+                event:     events[j],
                 eventType: eventType,
-                onTap: () {},
+                onTap:     () => showEventDetail(context, events[j].id),
               ),
               if (j < events.length - 1) const EventsDivider(),
             ],

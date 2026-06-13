@@ -9,23 +9,27 @@ import '../../../../../core/theme/app_text_styles.dart';
 ///
 /// Normal mode:  [Thumbnail] Title / resetLabel   [−] [count] [+]
 /// Edit mode:    [Delete] [Thumbnail] Title / category   [DragHandle]
+///
+/// Tapping the row (outside the counter buttons) in normal mode calls [onTap].
 class TallyListItem extends StatelessWidget {
   const TallyListItem({
     super.key,
     required this.event,
     this.isEditing   = false,
     this.isDraggable = false,
+    this.onTap,
     this.onDelete,
     this.onIncrement,
     this.onDecrement,
   });
 
-  final Event event;
-  final bool isEditing;
-  final bool isDraggable;
-  final VoidCallback? onDelete;
-  final VoidCallback? onIncrement;
-  final VoidCallback? onDecrement;
+  final Event          event;
+  final bool           isEditing;
+  final bool           isDraggable;
+  final VoidCallback?  onTap;
+  final VoidCallback?  onDelete;
+  final VoidCallback?  onIncrement;
+  final VoidCallback?  onDecrement;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +38,7 @@ class TallyListItem extends StatelessWidget {
     final mutedClr = theme.colorScheme.onSurface.withValues(alpha: 0.45);
     final tileClr  = Color(event.colorValue);
 
-    return Padding(
+    final content = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
@@ -48,30 +52,13 @@ class TallyListItem extends StatelessWidget {
           _Thumbnail(color: tileClr, photoPath: event.photoPath),
           const SizedBox(width: 14),
 
-          // Title + subtitle
+          // Title
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  event.title,
-                  style: AppTextStyles.titleMedium.copyWith(color: onSurf),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),// Only show the subtitle line if it actually exists and isn't empty
-                  if (event.subtitle != null && event.subtitle!.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      event.subtitle!,
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: mutedClr,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    )
-                ],
-              ],
+            child: Text(
+              event.title,
+              style: AppTextStyles.titleMedium.copyWith(color: onSurf),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
 
@@ -89,6 +76,18 @@ class TallyListItem extends StatelessWidget {
         ],
       ),
     );
+
+    // Wrap in a tap target only in normal (non-editing) mode.
+    // The inner _CountBtn widgets use HitTestBehavior.opaque so they absorb
+    // their own taps — the outer detector only fires on thumbnail / title.
+    if (!isEditing && onTap != null) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: content,
+      );
+    }
+    return content;
   }
 }
 
@@ -101,9 +100,9 @@ class _TallyCounter extends StatelessWidget {
     this.onIncrement,
   });
 
-  final int count;
-  final VoidCallback? onDecrement;
-  final VoidCallback? onIncrement;
+  final int            count;
+  final VoidCallback?  onDecrement;
+  final VoidCallback?  onIncrement;
 
   @override
   Widget build(BuildContext context) {
@@ -124,8 +123,7 @@ class _TallyCounter extends StatelessWidget {
             '$count',
             textAlign: TextAlign.center,
             style: AppTextStyles.frauncesMedium.copyWith(
-              color: onSurf, fontStyle: FontStyle.italic,
-            ),
+                color: onSurf, fontStyle: FontStyle.italic),
           ),
         ),
         _CountBtn(
@@ -145,9 +143,9 @@ class _CountBtn extends StatelessWidget {
     this.onTap,
   });
 
-  final IconData  icon;
-  final Color     color;
-  final VoidCallback? onTap;
+  final IconData       icon;
+  final Color          color;
+  final VoidCallback?  onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -221,8 +219,7 @@ class _DeleteButton extends StatelessWidget {
     child: Container(
       width: 26, height: 26,
       decoration: const BoxDecoration(
-        color: Color(0xFFE53935), shape: BoxShape.circle,
-      ),
+          color: Color(0xFFE53935), shape: BoxShape.circle),
       child: const Icon(Icons.remove, color: Colors.white, size: 15),
     ),
   );
@@ -241,8 +238,7 @@ class _DragHandle extends StatelessWidget {
       (_) => Container(
         width: 18, height: 1.5,
         decoration: BoxDecoration(
-          color: color, borderRadius: BorderRadius.circular(1),
-        ),
+            color: color, borderRadius: BorderRadius.circular(1)),
       ),
     ),
   );

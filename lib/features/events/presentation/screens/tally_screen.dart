@@ -8,16 +8,8 @@ import '../../data/event_repository.dart';
 import '../../domain/event.dart';
 import '../providers/events_provider.dart';
 import '../widgets/lists/tally_list_item.dart';
+import 'event_detail_sheet.dart';
 
-/// Tab 3 — Tally counters grouped by category.
-/// Supports the same drag-to-reorder / delete edit mode as EventsScreen,
-/// but without the active/finished distinction.
-/// Normal mode: respects [TallyViewMode] — Category (grouped) or All (flat,
-/// newest first). Edit mode: Category view supports drag-to-reorder; All view
-/// shows a flat deletable list (no reorder).
-///
-/// Auto-resets are now handled centrally in HomeScreen so they fire regardless
-/// of which tab the user is on.
 class TallyScreen extends ConsumerStatefulWidget {
   const TallyScreen({super.key, this.isEditing = false});
   final bool isEditing;
@@ -27,9 +19,8 @@ class TallyScreen extends ConsumerStatefulWidget {
 }
 
 class _TallyScreenState extends ConsumerState<TallyScreen> {
-  // ── Edit-mode local state ─────────────────────────────────────────────────
-  List<({String category, List<Event> events})> _groups         = [];
-  List<Event>                                   _flatEditEvents  = [];
+  List<({String category, List<Event> events})> _groups        = [];
+  List<Event>                                   _flatEditEvents = [];
   bool                                          _editInitialized = false;
   ProviderSubscription<AsyncValue<List<Event>>>? _flatSub;
 
@@ -87,7 +78,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
   }
 
   void _initFromEvents(List<Event> events) {
-    // Grouped view — preserves manual sort order.
     final map = <String, List<Event>>{};
     for (final e in events) {
       (map[e.category] ??= []).add(e);
@@ -96,7 +86,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
         .map((e) => (category: e.key, events: [...e.value]))
         .toList();
 
-    // Flat edit view — newest first.
     _flatEditEvents = [...events]
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
@@ -196,7 +185,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
         return const Center(child: CircularProgressIndicator.adaptive());
       }
 
-      // All view — flat deletable list, no drag-to-reorder.
       if (viewMode == TallyViewMode.all) {
         return _FlatTallyEditView(
           events:   _flatEditEvents,
@@ -204,7 +192,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
         );
       }
 
-      // Category view — grouped drag-to-reorder.
       if (_groups.isEmpty) return const _EmptyState();
       return _GroupedEditView(
         groups:          _groups,
@@ -217,7 +204,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
 
     // ── Normal mode ──────────────────────────────────────────────────────────
 
-    // All view — flat list, newest first.
     if (viewMode == TallyViewMode.all) {
       return ref.watch(flatTallyAllProvider).when(
         data: (events) => events.isEmpty
@@ -226,6 +212,7 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
                 events:      events,
                 onIncrement: (id) => _adjust(id, 1),
                 onDecrement: (id) => _adjust(id, -1),
+                onTap:       (id) => showEventDetail(context, id),
               ),
         loading: () =>
             const Center(child: CircularProgressIndicator.adaptive()),
@@ -237,7 +224,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
       );
     }
 
-    // Category view — grouped.
     return ref.watch(groupedTallyProvider).when(
       data: (grouped) => grouped.isEmpty
           ? const _EmptyState()
@@ -245,6 +231,7 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
               grouped:     grouped,
               onIncrement: (id) => _adjust(id, 1),
               onDecrement: (id) => _adjust(id, -1),
+              onTap:       (id) => showEventDetail(context, id),
             ),
       loading: () =>
           const Center(child: CircularProgressIndicator.adaptive()),
@@ -264,18 +251,20 @@ class _TallyList extends StatelessWidget {
     required this.grouped,
     required this.onIncrement,
     required this.onDecrement,
+    required this.onTap,
   });
 
   final Map<String, List<Event>> grouped;
   final ValueChanged<int>        onIncrement;
   final ValueChanged<int>        onDecrement;
+  final ValueChanged<int>        onTap;
 
   @override
   Widget build(BuildContext context) {
     final entries = grouped.entries.toList();
     return ListView.builder(
       padding: EdgeInsets.only(
-        top: 8, bottom: MediaQuery.of(context).padding.bottom),
+          top: 8, bottom: MediaQuery.of(context).padding.bottom),
       itemCount: entries.length,
       itemBuilder: (ctx, i) {
         final cat    = entries[i].key;
@@ -289,6 +278,7 @@ class _TallyList extends StatelessWidget {
                 event:       events[j],
                 onIncrement: () => onIncrement(events[j].id),
                 onDecrement: () => onDecrement(events[j].id),
+                onTap:       () => onTap(events[j].id),
               ),
               if (j < events.length - 1) const _Divider(),
             ],
@@ -306,22 +296,25 @@ class _FlatTallyList extends StatelessWidget {
     required this.events,
     required this.onIncrement,
     required this.onDecrement,
+    required this.onTap,
   });
 
   final List<Event>       events;
   final ValueChanged<int> onIncrement;
   final ValueChanged<int> onDecrement;
+  final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) => ListView.separated(
     padding: EdgeInsets.only(
-      top: 8, bottom: MediaQuery.of(context).padding.bottom),
+        top: 8, bottom: MediaQuery.of(context).padding.bottom),
     itemCount: events.length,
     separatorBuilder: (_, _) => const _Divider(),
     itemBuilder: (ctx, i) => TallyListItem(
       event:       events[i],
       onIncrement: () => onIncrement(events[i].id),
       onDecrement: () => onDecrement(events[i].id),
+      onTap:       () => onTap(events[i].id),
     ),
   );
 }
@@ -342,7 +335,7 @@ class _FlatTallyEditView extends StatelessWidget {
     if (events.isEmpty) return const _EmptyState();
     return ListView.separated(
       padding: EdgeInsets.only(
-        top: 8, bottom: MediaQuery.of(context).padding.bottom),
+          top: 8, bottom: MediaQuery.of(context).padding.bottom),
       itemCount: events.length,
       separatorBuilder: (_, _) => const _Divider(),
       itemBuilder: (ctx, i) => TallyListItem(
@@ -423,7 +416,7 @@ class _GroupedEditView extends StatelessWidget {
     }
 
     slivers.add(SliverPadding(
-      padding: EdgeInsets.only(bottom: bottomPadding)));
+        padding: EdgeInsets.only(bottom: bottomPadding)));
     return CustomScrollView(slivers: slivers);
   }
 }
@@ -454,10 +447,14 @@ class _EditGroupHeader extends StatelessWidget {
         children: [
           Text(category.toUpperCase(),
               style: AppTextStyles.labelSmall.copyWith(
-                  color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w600)),
+                  color: muted,
+                  letterSpacing: 1.6,
+                  fontWeight: FontWeight.w600)),
           const Spacer(),
-          _MoveBtn(Icons.keyboard_arrow_up_rounded,   canMoveUp,   onMoveUp,   onSurf),
-          _MoveBtn(Icons.keyboard_arrow_down_rounded, canMoveDown, onMoveDown, onSurf),
+          _MoveBtn(Icons.keyboard_arrow_up_rounded,
+              canMoveUp, onMoveUp, onSurf),
+          _MoveBtn(Icons.keyboard_arrow_down_rounded,
+              canMoveDown, onMoveDown, onSurf),
         ],
       ),
     );
@@ -477,7 +474,8 @@ class _MoveBtn extends StatelessWidget {
     behavior: HitTestBehavior.opaque,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: Icon(icon, size: 22,
+      child: Icon(icon,
+          size: 22,
           color: enabled
               ? activeColor
               : activeColor.withValues(alpha: 0.2)),
@@ -491,12 +489,15 @@ class _CategoryHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
+    final muted =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
       child: Text(label.toUpperCase(),
           style: AppTextStyles.labelSmall.copyWith(
-              color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w600)),
+              color: muted,
+              letterSpacing: 1.6,
+              fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -506,7 +507,8 @@ class _Divider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Divider(
-    height: 1, thickness: 0.5,
+    height: 1,
+    thickness: 0.5,
     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.10),
   );
 }
@@ -516,11 +518,13 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.40);
+    final muted =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.40);
     return Center(
       child: Text('No tallies yet.\nTap + to add one.',
           textAlign: TextAlign.center,
-          style: AppTextStyles.bodyMedium.copyWith(color: muted, height: 1.6)),
+          style: AppTextStyles.bodyMedium
+              .copyWith(color: muted, height: 1.6)),
     );
   }
 }
