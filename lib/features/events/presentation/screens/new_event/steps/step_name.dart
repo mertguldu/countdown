@@ -27,28 +27,39 @@ class StepName extends StatelessWidget {
     final error = theme.colorScheme.error;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 1. Title
           Text(
             "What's your\nmoment?",
             style: AppTextStyles.frauncesMedium.copyWith(
-              fontSize: 32, color: onSurf, fontStyle: FontStyle.italic,
-              height: 1.18, letterSpacing: -0.5,
+              fontSize: 32,
+              color: onSurf,
+              fontStyle: FontStyle.italic,
+              height: 1.18,
+              letterSpacing: -0.5,
             ),
           ),
           const SizedBox(height: 36),
+
+          // 2. Main Moment Name Field
           TextField(
             controller: nameCtrl,
             autofocus: true,
             style: AppTextStyles.frauncesMedium.copyWith(
-              fontSize: 26, color: onSurf, fontStyle: FontStyle.italic, letterSpacing: -0.3,
+              fontSize: 26,
+              color: onSurf,
+              fontStyle: FontStyle.italic,
+              letterSpacing: -0.3,
             ),
             decoration: InputDecoration(
               hintText: 'Give it a name…',
               hintStyle: AppTextStyles.frauncesMedium.copyWith(
-                fontSize: 26, color: muted.withValues(alpha: 0.45), fontStyle: FontStyle.italic,
+                fontSize: 26,
+                color: muted.withValues(alpha: 0.45),
+                fontStyle: FontStyle.italic,
               ),
               filled: false,
               border: UnderlineInputBorder(
@@ -60,19 +71,51 @@ class StepName extends StatelessWidget {
                   borderSide: BorderSide(color: hasError ? error : onSurf, width: 1.5)),
               contentPadding: const EdgeInsets.only(top: 10, bottom: 14),
             ),
-            textInputAction: TextInputAction.done,
+            textInputAction: TextInputAction.next, // Changed to next for better structural flow
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 180),
             crossFadeState: hasError ? CrossFadeState.showFirst : CrossFadeState.showSecond,
             firstChild: Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text('Give your moment a name to continue.',
-                  style: AppTextStyles.labelSmall.copyWith(color: error)),
+              child: Text(
+                'Give your moment a name to continue.',
+                style: AppTextStyles.labelSmall.copyWith(color: error),
+              ),
             ),
             secondChild: const SizedBox(height: 0),
           ),
+
+          // 3. Custom Category Input (Placed right under the main title items)
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 200),
+            crossFadeState: category == 'Other' ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            firstChild: Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: TextField(
+                controller: customCategoryCtrl,
+                autofocus: true, // Immediately keyboard-focuses when revealed
+                style: AppTextStyles.bodyLarge.copyWith(color: onSurf),
+                decoration: InputDecoration(
+                  hintText: 'What kind of moment?',
+                  hintStyle: AppTextStyles.bodyLarge.copyWith(color: muted.withValues(alpha: 0.45)),
+                  filled: false,
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: muted.withValues(alpha: 0.28), width: 1.5),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: onSurf, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.only(top: 8, bottom: 8),
+                ),
+                textInputAction: TextInputAction.done,
+              ),
+            ),
+            secondChild: const SizedBox(width: double.infinity, height: 0),
+          ),
           const SizedBox(height: 32),
+
+          // 4. Category Selector Section
           Text(
             'CATEGORY',
             style: AppTextStyles.labelSmall.copyWith(
@@ -105,7 +148,8 @@ class StepName extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        width: 7, height: 7,
+                        width: 7,
+                        height: 7,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: catColor.withValues(alpha: sel ? 1.0 : 0.45),
@@ -126,32 +170,6 @@ class StepName extends StatelessWidget {
               );
             }).toList(),
           ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 200),
-            crossFadeState: category == 'Other' ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-            firstChild: Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: TextField(
-                controller: customCategoryCtrl,
-                style: AppTextStyles.bodyLarge.copyWith(color: onSurf),
-                decoration: InputDecoration(
-                  hintText: 'What kind of moment?',
-                  hintStyle: AppTextStyles.bodyLarge.copyWith(color: muted.withValues(alpha: 0.45)),
-                  filled: false,
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: muted.withValues(alpha: 0.28), width: 1.5),
-                  ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: onSurf, width: 1.5),
-                  ),
-                  contentPadding: const EdgeInsets.only(top: 8, bottom: 8),
-                ),
-                textInputAction: TextInputAction.done,
-              ),
-            ),
-            secondChild: const SizedBox(width: double.infinity, height: 0),
-          ),
-          const SizedBox(height: 32),
         ],
       ),
     );

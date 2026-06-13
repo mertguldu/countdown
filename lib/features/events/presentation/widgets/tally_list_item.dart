@@ -60,16 +60,7 @@ class TallyListItem extends StatelessWidget {
                   style: AppTextStyles.titleMedium.copyWith(color: onSurf),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  isEditing
-                      ? event.category.toUpperCase()
-                      : ResetPeriodX.fromDb(event.resetPeriod).displayLabel,
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: mutedClr, letterSpacing: 1.2,
-                  ),
-                ),
+                )
               ],
             ),
           ),

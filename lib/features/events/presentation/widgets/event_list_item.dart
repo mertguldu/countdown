@@ -59,7 +59,7 @@ class EventListItem extends StatelessWidget {
             _EventThumbnail(color: tileClr, photoPath: event.photoPath),
             const SizedBox(width: 14),
 
-            // Title + category
+            // Title + Subtitle
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -71,13 +71,18 @@ class EventListItem extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    event.category.toUpperCase(),
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: mutedClr, letterSpacing: 1.2,
+                  // Only show the subtitle line if it actually exists and isn't empty
+                  if (event.subtitle != null && event.subtitle!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      event.subtitle!,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: mutedClr,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
