@@ -89,6 +89,15 @@ class Events extends Table {
   /// Null / absent means RepeatOption.never — we never store the string 'never'.
   TextColumn get repeatPeriod => text().nullable()();
 
+  // ── Reminder (countdown / count-up only) ─────────────────────────────────
+  /// 'oneWeek' | 'oneDay' | 'dayOf' | 'custom' | null
+  /// Null means the per-type default has never been overridden.
+  TextColumn get reminderType => text().nullable()();
+
+  /// Total duration of a custom reminder, stored as seconds.
+  /// Only meaningful when reminderType == 'custom'.
+  IntColumn get reminderCustomSecs => integer().nullable()();
+
   // ── Tally-only ───────────────────────────────────────────────────────────
   IntColumn    get tallyCount  => integer().withDefault(const Constant(0))();
   TextColumn   get resetPeriod => text().nullable()();

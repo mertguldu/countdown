@@ -18,6 +18,7 @@ import '../../domain/event.dart';
 import '../providers/events_provider.dart';
 import 'new_event/new_event_constants.dart';
 import 'new_event/new_event_shared_widgets.dart';
+import 'new_event/steps/step_reminder.dart';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,10 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
   bool _initialized = false;
   final _picker     = ImagePicker();
 
+  // ── Reminder ──────────────────────────────────────────────────────────────
+  Reminder _reminder    = Reminder.oneDay;
+  int _customWeeks = 0, _customDays = 1, _customHours = 0, _customMins = 0;
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +96,30 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
     _titleCtrl.text = e.title;
     _noteCtrl .text = e.subtitle ?? '';
     _initialized    = true;
+
+    // Restore reminder from DB. Fall back to sensible per-type defaults for
+    // events that were created before this column existed (reminderType == null).
+    final type = EventTypeX.fromDb(e.eventType);
+    if (e.reminderType != null) {
+      _reminder = Reminder.values.firstWhere(
+        (r) => r.name == e.reminderType,
+        orElse: () =>
+            type == EventType.countup ? Reminder.custom : Reminder.oneDay,
+      );
+      // Decompose stored seconds back into the four stepper fields.
+      final secs = e.reminderCustomSecs ?? 0;
+      if (secs > 0) {
+        final totalMins  = secs  ~/ 60;
+        final totalHours = totalMins  ~/ 60;
+        final totalDays  = totalHours ~/ 24;
+        _customMins  = totalMins  % 60;
+        _customHours = totalHours % 24;
+        _customWeeks = totalDays  ~/ 7;
+        _customDays  = totalDays  % 7;
+      }
+    } else {
+      _reminder = type == EventType.countup ? Reminder.custom : Reminder.oneDay;
+    }
   }
 
   // ── Commit ────────────────────────────────────────────────────────────────
@@ -124,11 +153,11 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
       lastDate: DateTime(2100),
     );
     if (picked == null || !mounted) return;
-    _patch(EventsCompanion(
-      targetDate: Value(DateTime(
-          picked.year, picked.month, picked.day,
-          current.hour, current.minute)),
-    ));
+    final newDate = DateTime(
+        picked.year, picked.month, picked.day,
+        current.hour, current.minute);
+    _patch(EventsCompanion(targetDate: Value(newDate)));
+    _rescheduleNotification(event, newTargetDate: newDate);
   }
 
   Future<void> _pickTime(Event event) async {
@@ -138,11 +167,11 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
       initialTime: TimeOfDay(hour: current.hour, minute: current.minute),
     );
     if (picked == null || !mounted) return;
-    _patch(EventsCompanion(
-      targetDate: Value(DateTime(
-          current.year, current.month, current.day,
-          picked.hour, picked.minute)),
-    ));
+    final newDate = DateTime(
+        current.year, current.month, current.day,
+        picked.hour, picked.minute);
+    _patch(EventsCompanion(targetDate: Value(newDate)));
+    _rescheduleNotification(event, newTargetDate: newDate);
   }
 
   // ── Pickers ───────────────────────────────────────────────────────────────
@@ -203,6 +232,112 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
         ),
       ),
     );
+  }
+
+  // ── Reminder ──────────────────────────────────────────────────────────────
+
+  void _showReminderPicker(Event event) {
+    final isCountdown = EventTypeX.fromDb(event.eventType) == EventType.countdown;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ReminderPickerSheet(
+        isCountdown:  isCountdown,
+        initial:      _reminder,
+        initialWeeks: _customWeeks,
+        initialDays:  _customDays,
+        initialHours: _customHours,
+        initialMins:  _customMins,
+        onConfirm: (reminder, weeks, days, hours, mins) {
+          setState(() {
+            _reminder    = reminder;
+            _customWeeks = weeks;
+            _customDays  = days;
+            _customHours = hours;
+            _customMins  = mins;
+          });
+          // Persist so the UI survives sheet close / reopen.
+          final customSecs = reminder == Reminder.custom
+              ? Duration(
+                  days:    weeks * 7 + days,
+                  hours:   hours,
+                  minutes: mins,
+                ).inSeconds
+              : null;
+          _patch(EventsCompanion(
+            reminderType:      Value(reminder.name),
+            reminderCustomSecs: Value(customSecs),
+          ));
+          _rescheduleNotification(event);
+        },
+      ),
+    );
+  }
+
+  Future<void> _rescheduleNotification(Event event, {DateTime? newTargetDate}) async {
+    await NotificationService.cancel(event.id);
+    final td = newTargetDate ?? event.targetDate;
+    if (td == null) return;
+
+    final type = EventTypeX.fromDb(event.eventType);
+    DateTime? notifDate;
+    String    body = '"${event.title}" is coming up.';
+
+    if (type == EventType.countdown) {
+      switch (_reminder) {
+        case Reminder.oneWeek:
+          notifDate = td.subtract(const Duration(days: 7));
+          body = '"${event.title}" is 1 week away!';
+        case Reminder.oneDay:
+          notifDate = td.subtract(const Duration(days: 1));
+          body = '"${event.title}" is tomorrow!';
+        case Reminder.dayOf:
+          notifDate = DateTime(td.year, td.month, td.day, 9);
+          body = 'Today is "${event.title}"!';
+        case Reminder.custom:
+          final dur = _customDuration();
+          if (dur.inMinutes > 0) {
+            notifDate = td.subtract(dur);
+            body = '"${event.title}" is coming up!';
+          }
+      }
+    } else if (type == EventType.countup) {
+      final dur = _customDuration();
+      if (dur.inMinutes > 0) {
+        notifDate = td.add(dur);
+        body = '"${event.title}" milestone!';
+      }
+    }
+
+    if (notifDate == null || notifDate.isBefore(DateTime.now())) return;
+    await NotificationService.schedule(
+      id:            event.id,
+      title:         event.title,
+      body:          body,
+      scheduledDate: notifDate,
+      payload:       event.id.toString(),
+    );
+  }
+
+  Duration _customDuration() => Duration(
+    days:    _customWeeks * 7 + _customDays,
+    hours:   _customHours,
+    minutes: _customMins,
+  );
+
+  String _reminderLabel(EventType type) {
+    if (_reminder == Reminder.custom) {
+      final parts = <String>[];
+      if (_customWeeks > 0) parts.add('${_customWeeks}w');
+      if (_customDays  > 0) parts.add('${_customDays}d');
+      if (_customHours > 0) parts.add('${_customHours}h');
+      if (_customMins  > 0) parts.add('${_customMins}m');
+      if (parts.isEmpty) return 'None';
+      final suffix = type == EventType.countup ? ' after' : ' before';
+      return '${parts.join(' ')}$suffix';
+    }
+    return _reminder.label;
   }
 
   // ── Tally ─────────────────────────────────────────────────────────────────
@@ -327,9 +462,6 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
         child: CustomScrollView(
           controller: widget.scrollController,
           slivers: [
-            // ── Drag handle ──────────────────────────────────────────────
-            const SliverToBoxAdapter(child: _DragHandle()),
-
             // ── Hero ─────────────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
@@ -444,6 +576,12 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
                 value: RepeatOptionX.fromDb(event.repeatPeriod).label,
                 onTap: () => _showRepeatPicker(event),
               ),
+              _FieldRow(
+                label: 'Notification',
+                icon:  Icons.notifications_outlined,
+                value: _reminderLabel(EventType.countdown),
+                onTap: () => _showReminderPicker(event),
+              ),
             ]),
             const SizedBox(height: 12),
             // Meta group
@@ -472,6 +610,12 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
                 icon:  Icons.calendar_today_rounded,
                 value: '${_fmtDate(event.targetDate)}  ${_fmtTime(event.targetDate)}',
                 onTap: () => _pickDate(event),
+              ),
+              _FieldRow(
+                label: 'Notification',
+                icon:  Icons.notifications_outlined,
+                value: _reminderLabel(EventType.countup),
+                onTap: () => _showReminderPicker(event),
               ),
             ]),
             const SizedBox(height: 12),
@@ -584,7 +728,6 @@ class _FieldGroup extends StatelessWidget {
               Divider(
                 height: 0,
                 thickness: 0.5,
-                // indented to align with text (icon 18 + gap 12 + padding 16)
                 indent: 46,
                 color: onSurf.withValues(alpha: 0.08),
               ),
@@ -674,8 +817,6 @@ class _HeroSectionState extends State<_HeroSection> {
             _background(event, color),
 
             // ── Gradient vignette ───────────────────────────────────────
-            // Tally uses full-colour bg, so only a soft bottom vignette.
-            // Countdown/countup get a deeper bottom shadow for legibility.
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -733,8 +874,6 @@ class _HeroSectionState extends State<_HeroSection> {
     return _colorBg(color);
   }
 
-  /// Richer background: radial highlight at top-left fades to a darker
-  /// complementary tone at bottom-right — more depth than a flat gradient.
   Widget _colorBg(Color c) {
     final dark = HSLColor.fromColor(c)
         .withLightness(
@@ -838,7 +977,6 @@ class _HeroSectionState extends State<_HeroSection> {
     );
   }
 
-  /// Tally: counter sits inside a frosted-glass pill container.
   Widget _tallyContent(Event event) => Center(
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -854,7 +992,6 @@ class _HeroSectionState extends State<_HeroSection> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 24),
-          // Frosted-glass pill
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             decoration: BoxDecoration(
@@ -960,7 +1097,6 @@ class _FieldRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            // Leading icon — subtle, aligned with muted label colour
             if (icon != null) ...[
               Icon(icon, size: 18, color: muted.withValues(alpha: 0.55)),
               const SizedBox(width: 12),
@@ -1033,7 +1169,6 @@ class _InlineEditRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          // Icon tinted to accent while editing
           if (icon != null) ...[
             Icon(icon, size: 18, color: accent.withValues(alpha: 0.7)),
             const SizedBox(width: 12),
@@ -1061,7 +1196,6 @@ class _InlineEditRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // Accent pill instead of bare TextButton
           GestureDetector(
             onTap: onDone,
             child: Container(
@@ -1170,8 +1304,6 @@ class _HeroCountBtn extends StatelessWidget {
 }
 
 // ── Picker sheet wrapper ──────────────────────────────────────────────────────
-// Wraps category / repeat / reset pickers in a consistent styled shell
-// (drag handle + title) so they feel part of the same design language.
 
 class _PickerSheet extends StatelessWidget {
   const _PickerSheet({required this.title, required this.child});
@@ -1184,13 +1316,12 @@ class _PickerSheet extends StatelessWidget {
     final onSurf  = Theme.of(context).colorScheme.onSurface;
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: ColoredBox(
+      child: Material(
         color: surface,
         child: SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Drag handle
               Center(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1203,14 +1334,13 @@ class _PickerSheet extends StatelessWidget {
                   ),
                 ),
               ),
-              // Sheet title
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(title,
                     style:
                         AppTextStyles.titleMedium.copyWith(color: onSurf)),
               ),
-              child,
+              Flexible(child: child),
             ],
           ),
         ),
@@ -1283,6 +1413,188 @@ class _ResetPeriodList extends StatelessWidget {
             onTap: () => onSelect(period),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+// ── Reminder picker sheet ─────────────────────────────────────────────────────
+
+class _ReminderPickerSheet extends StatefulWidget {
+  const _ReminderPickerSheet({
+    required this.isCountdown,
+    required this.initial,
+    required this.initialWeeks,
+    required this.initialDays,
+    required this.initialHours,
+    required this.initialMins,
+    required this.onConfirm,
+  });
+
+  final bool     isCountdown;
+  final Reminder initial;
+  final int      initialWeeks, initialDays, initialHours, initialMins;
+  final void Function(Reminder, int, int, int, int) onConfirm;
+
+  @override
+  State<_ReminderPickerSheet> createState() => _ReminderPickerSheetState();
+}
+
+class _ReminderPickerSheetState extends State<_ReminderPickerSheet> {
+  late Reminder _selected;
+  late int _weeks, _days, _hours, _mins;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initial;
+    _weeks    = widget.initialWeeks;
+    _days     = widget.initialDays;
+    _hours    = widget.initialHours;
+    _mins     = widget.initialMins;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
+    final onSurf  = Theme.of(context).colorScheme.onSurface;
+    final options = widget.isCountdown ? Reminder.values : [Reminder.custom];
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: ColoredBox(
+        color: surface,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Container(
+                    width: 36, height: 4,
+                    decoration: BoxDecoration(
+                      color: onSurf.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+              // Sheet title
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  'Notification',
+                  style: AppTextStyles.titleMedium.copyWith(color: onSurf),
+                ),
+              ),
+              // Options list
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: options.map((opt) {
+                      final isSel = opt == _selected;
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setState(() => _selected = opt);
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: onSurf.withValues(alpha: 0.10),
+                                    width: 0.5,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  AnimatedContainer(
+                                    duration:
+                                        const Duration(milliseconds: 200),
+                                    width: 22, height: 22,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: isSel
+                                            ? onSurf
+                                            : onSurf.withValues(alpha: 0.35),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: isSel
+                                        ? Center(
+                                            child: Container(
+                                              width: 10, height: 10,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: onSurf,
+                                              ),
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Text(
+                                    opt.label,
+                                    style: AppTextStyles.bodyLarge
+                                        .copyWith(color: onSurf),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Custom duration inputs expand inline when selected
+                          if (opt == Reminder.custom && isSel)
+                            CustomReminderBoxes(
+                              isCountingDown: widget.isCountdown,
+                              weeks:          _weeks,
+                              days:           _days,
+                              hours:          _hours,
+                              mins:           _mins,
+                              onWeeksChanged: (v) =>
+                                  setState(() => _weeks = v),
+                              onDaysChanged:  (v) =>
+                                  setState(() => _days  = v),
+                              onHoursChanged: (v) =>
+                                  setState(() => _hours = v),
+                              onMinsChanged:  (v) =>
+                                  setState(() => _mins  = v),
+                            ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              // Confirm button
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () {
+                      widget.onConfirm(
+                          _selected, _weeks, _days, _hours, _mins);
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Set reminder'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

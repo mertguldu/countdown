@@ -11,7 +11,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openDatabase());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -29,6 +29,12 @@ class AppDatabase extends _$AppDatabase {
       if (from < 4) {
         // v3 → v4: add repeatPeriod for countdown / count-up recurrence.
         await migrator.addColumn(events, events.repeatPeriod);
+      }
+      if (from < 5) {
+        // v4 → v5: persist reminder preference per event so the detail
+        // sheet can restore the user's last selection on reopen.
+        await migrator.addColumn(events, events.reminderType);
+        await migrator.addColumn(events, events.reminderCustomSecs);
       }
     },
   );
