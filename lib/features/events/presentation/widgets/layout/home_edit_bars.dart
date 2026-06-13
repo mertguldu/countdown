@@ -2,9 +2,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/theme/app_text_styles.dart';
-import '../../../events/presentation/screens/events_screen.dart';
-import '../../domain/event.dart';
+import '../../../../../core/theme/app_text_styles.dart';
+import '../../screens/events_screen.dart';
+import '../../../domain/event.dart';
 
 extension EditTabX on EditTab {
   String get label => switch (this) {

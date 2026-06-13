@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../../../../core/database/database.dart';
-import '../../../../core/theme/app_text_styles.dart';
-import '../../domain/event.dart';
-import 'countdown_display.dart';
-import 'countup_display.dart';
+import '../../../../../core/database/database.dart';
+import '../../../../../core/theme/app_text_styles.dart';
+import '../../../domain/event.dart';
+import '../displays/countdown_display.dart';
+import '../displays/countup_display.dart';
 
 /// Unified list row for countdown and countup events.
 ///

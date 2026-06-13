@@ -1,9 +1,9 @@
 import 'package:countdown/core/database/database.dart';
 import 'package:flutter/material.dart';
 
-import '../../domain/event.dart';
+import '../../../domain/event.dart';
 import 'event_list_item.dart';
-import 'events_ui_components.dart';
+import '../shared/events_ui_components.dart';
 
 class EventListView extends StatelessWidget {
   const EventListView({

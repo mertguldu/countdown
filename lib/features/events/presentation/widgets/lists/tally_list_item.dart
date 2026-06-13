@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../core/database/database.dart';
-import '../../../../core/theme/app_text_styles.dart';
+import '../../../../../core/database/database.dart';
+import '../../../../../core/theme/app_text_styles.dart';
 
 /// Row item for a tally counter.
 ///

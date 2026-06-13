@@ -8,10 +8,10 @@ import '../../domain/event.dart';
 import '../providers/events_provider.dart';
 
 // Local Widget Imports
-import '../widgets/event_list_view.dart';
-import '../widgets/grouped_edit_view.dart';
-import '../widgets/finished_edit_view.dart';
-import '../widgets/events_ui_components.dart';
+import '../widgets/lists/event_list_view.dart';
+import '../widgets/edit_views/grouped_edit_view.dart';
+import '../widgets/edit_views/finished_edit_view.dart';
+import '../widgets/shared/events_ui_components.dart';
 
 enum EditTab { active, finished }
 

@@ -1,36 +1,35 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../../../core/theme/app_text_styles.dart';
+import '../../../../../core/theme/app_text_styles.dart';
 
-/// Live count-up display — mirrors CountdownDisplay logic but measures elapsed
-/// time since [startDate].
-/// If [startDate] is still in the future, shows "Starts in X d" / "Starting soon".
-class CountUpDisplay extends StatefulWidget {
-  const CountUpDisplay({super.key, required this.startDate});
-  final DateTime startDate;
+/// Live per-second countdown timer display.
+/// Takes a guaranteed non-null [targetDate] (callers use event.targetDate!).
+class CountdownDisplay extends StatefulWidget {
+  const CountdownDisplay({super.key, required this.targetDate});
+  final DateTime targetDate;
 
   @override
-  State<CountUpDisplay> createState() => _CountUpDisplayState();
+  State<CountdownDisplay> createState() => _CountdownDisplayState();
 }
 
-class _CountUpDisplayState extends State<CountUpDisplay> {
-  late Timer    _timer;
-  late Duration _elapsed;
+class _CountdownDisplayState extends State<CountdownDisplay> {
+  late Timer  _timer;
+  late Duration _remaining;
 
   @override
   void initState() {
     super.initState();
-    _elapsed = _compute();
+    _remaining = _compute();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _elapsed = _compute());
+      if (mounted) setState(() => _remaining = _compute());
     });
   }
 
   @override
-  void didUpdateWidget(CountUpDisplay old) {
+  void didUpdateWidget(CountdownDisplay old) {
     super.didUpdateWidget(old);
-    if (old.startDate != widget.startDate) {
-      setState(() => _elapsed = _compute());
+    if (old.targetDate != widget.targetDate) {
+      setState(() => _remaining = _compute());
     }
   }
 
@@ -40,8 +39,9 @@ class _CountUpDisplayState extends State<CountUpDisplay> {
     super.dispose();
   }
 
-  Duration _compute() => DateTime.now().difference(widget.startDate);
+  Duration _compute() => widget.targetDate.difference(DateTime.now());
 
+  /// hh:mm:ss without leading zeros on the leftmost unit.
   String _fmt(Duration d) {
     final h = d.inHours.remainder(24);
     final m = d.inMinutes.remainder(60);
@@ -59,22 +59,20 @@ class _CountUpDisplayState extends State<CountUpDisplay> {
     final onSurf   = theme.colorScheme.onSurface;
     final mutedClr = theme.colorScheme.onSurface.withValues(alpha: 0.45);
 
-    // Start date is still in the future
-    if (_elapsed.isNegative) {
-      final remaining = widget.startDate.difference(DateTime.now());
-      final days = remaining.inDays;
+    // Finished
+    if (_remaining.isNegative || _remaining == Duration.zero) {
       return Text(
-        days > 0 ? 'Starts in $days d' : 'Starting soon',
+        'Finished',
         style: AppTextStyles.bodyMedium.copyWith(
           color: mutedClr, fontStyle: FontStyle.italic,
         ),
       );
     }
 
-    final days    = _elapsed.inDays;
-    final timeStr = _fmt(_elapsed);
+    final days    = _remaining.inDays;
+    final timeStr = _fmt(_remaining);
 
-    // Under a day — show just the ticker
+    // Same day — show only time ticker
     if (days == 0) {
       return Text(
         timeStr,
@@ -86,7 +84,7 @@ class _CountUpDisplayState extends State<CountUpDisplay> {
       );
     }
 
-    // Days + time below
+    // Multiple days
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,

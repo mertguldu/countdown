@@ -1,8 +1,8 @@
 import 'package:countdown/core/database/database.dart';
 import 'package:flutter/material.dart';
 
-import 'event_list_item.dart';
-import 'events_ui_components.dart';
+import '../lists/event_list_item.dart';
+import '../shared/events_ui_components.dart';
 
 class FinishedEditView extends StatelessWidget {
   const FinishedEditView({

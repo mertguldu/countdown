@@ -10,13 +10,13 @@ import '../../../events/domain/event.dart';
 import '../../../events/presentation/providers/events_provider.dart';
 import '../../../events/presentation/screens/events_screen.dart';
 import '../../../events/presentation/screens/tally_screen.dart';
-import '../widgets/filter_pills.dart';
+import '../widgets/layout/filter_pills.dart';
 
 // Local Widget Imports
-import '../widgets/home_header.dart';
-import '../widgets/home_tabs.dart';
-import '../widgets/home_edit_bars.dart';
-import '../widgets/pill_layer.dart';
+import '../widgets/layout/home_header.dart';
+import '../widgets/layout/home_tabs.dart';
+import '../widgets/layout/home_edit_bars.dart';
+import '../widgets/layout/pill_layer.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});

@@ -7,7 +7,7 @@ import '../../../../core/theme/app_text_styles.dart';
 import '../../data/event_repository.dart';
 import '../../domain/event.dart';
 import '../providers/events_provider.dart';
-import '../widgets/tally_list_item.dart';
+import '../widgets/lists/tally_list_item.dart';
 
 /// Tab 3 — Tally counters grouped by category.
 /// Supports the same drag-to-reorder / delete edit mode as EventsScreen,
