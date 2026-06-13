@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/database/database.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../../domain/event.dart';
 
 /// Row item for a tally counter.
 ///
