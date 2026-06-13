@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../../../core/theme/app_text_styles.dart';
 import '../../../../domain/event.dart';          // ← RepeatOption now lives here
-import '../new_event_constants.dart';
 import '../new_event_shared_widgets.dart';
 
 class StepDetails extends StatelessWidget {

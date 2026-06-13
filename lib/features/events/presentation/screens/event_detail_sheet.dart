@@ -682,30 +682,6 @@ class _EventDetailSheetState extends ConsumerState<EventDetailSheet> {
       dt == null ? '—' : DateFormat('h:mm a').format(dt);
 }
 
-// ── Drag handle ───────────────────────────────────────────────────────────────
-
-class _DragHandle extends StatelessWidget {
-  const _DragHandle();
-
-  @override
-  Widget build(BuildContext context) {
-    final onSurf = Theme.of(context).colorScheme.onSurface;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Container(
-          width: 36,
-          height: 4,
-          decoration: BoxDecoration(
-            color: onSurf.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ── Field group card ──────────────────────────────────────────────────────────
 
 class _FieldGroup extends StatelessWidget {
