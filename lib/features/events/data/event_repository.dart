@@ -153,12 +153,12 @@ class EventRepository {
     for (final e in tallies) {
       final period = ResetPeriodX.fromDb(e.resetPeriod);
       if (period == ResetPeriod.never) continue;
-      final ref = e.lastResetAt ?? e.createdAt;
+      final baseline = e.lastResetAt ?? e.createdAt;
       final due = switch (period) {
-        ResetPeriod.daily   => !_sameDay(ref, now),
-        ResetPeriod.weekly  => now.difference(ref).inDays >= 7,
-        ResetPeriod.monthly => now.month != ref.month || now.year != ref.year,
-        ResetPeriod.yearly  => now.year != ref.year,
+        ResetPeriod.daily   => !_sameDay(baseline, now),
+        ResetPeriod.weekly  => now.difference(baseline).inDays >= 7,
+        ResetPeriod.monthly => now.month != baseline.month || now.year != baseline.year,
+        ResetPeriod.yearly  => now.year != baseline.year,
         ResetPeriod.never   => false,
       };
       if (due) await resetTally(e.id);
@@ -167,6 +167,73 @@ class EventRepository {
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
+
+  // ── Repeat ────────────────────────────────────────────────────────────────
+
+  /// Returns all countdown and count-up events that have a repeat period set.
+  /// Tally events are excluded — they use [processAutoResets] instead.
+  Future<List<Event>> fetchAllRepeatable() =>
+      (_db.select(_db.events)
+            ..where((t) =>
+                t.eventType.isNotIn([EventType.tally.name]) &
+                t.repeatPeriod.isNotNull()))
+          .get();
+
+  /// Advances any repeating events whose [targetDate] is now in the past.
+  ///
+  /// The date is advanced from the *stored* value (not from "now") so that
+  /// the original cadence is preserved even if the app hasn't been opened
+  /// for multiple cycles. Returns enough info for the caller to reschedule
+  /// notifications without needing to re-query the database.
+  Future<List<({int id, String title, DateTime newDate})>> processRepeats(
+      List<Event> events) async {
+    final now     = DateTime.now();
+    final results = <({int id, String title, DateTime newDate})>[];
+
+    for (final e in events) {
+      final td = e.targetDate;
+      if (td == null || td.isAfter(now)) continue;
+
+      final repeat = RepeatOptionX.fromDb(e.repeatPeriod);
+      if (repeat == RepeatOption.never) continue;
+
+      // Advance from the stored date one period at a time until we are in
+      // the future. This handles the case where the app was closed for
+      // multiple repeat cycles (e.g. a daily event missed for three days).
+      DateTime next = td;
+      while (!next.isAfter(now)) {
+        next = _advanceDate(next, repeat);
+      }
+
+      await (_db.update(_db.events)..where((t) => t.id.equals(e.id)))
+          .write(EventsCompanion(targetDate: Value(next)));
+
+      results.add((id: e.id, title: e.title, newDate: next));
+    }
+
+    return results;
+  }
+
+  DateTime _advanceDate(DateTime from, RepeatOption repeat) => switch (repeat) {
+    RepeatOption.never    => from,
+    RepeatOption.daily    => from.add(const Duration(days: 1)),
+    RepeatOption.weekly   => from.add(const Duration(days: 7)),
+    RepeatOption.biweekly => from.add(const Duration(days: 14)),
+    RepeatOption.monthly  => _addMonth(from),
+    RepeatOption.yearly   =>
+        DateTime(from.year + 1, from.month, from.day, from.hour, from.minute),
+  };
+
+  /// Adds exactly one calendar month, clamping to the last valid day if the
+  /// target month is shorter (e.g. Jan 31 → Feb 28/29, not Mar 2/3).
+  DateTime _addMonth(DateTime from) {
+    var year  = from.year;
+    var month = from.month + 1;
+    if (month > 12) { month = 1; year++; }
+    final lastDay = DateTime(year, month + 1, 0).day;
+    return DateTime(
+        year, month, from.day.clamp(1, lastDay), from.hour, from.minute);
+  }
 }
 
 @Riverpod(keepAlive: true)

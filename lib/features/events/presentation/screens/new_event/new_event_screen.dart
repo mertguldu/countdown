@@ -300,17 +300,24 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
       final repo    = ref.read(eventRepositoryProvider);
       final eventId = await repo.insertEvent(
         EventsCompanion(
-          title:       Value(name),
-          subtitle:    noteText.isNotEmpty ? Value(noteText) : const Value.absent(),
-          category:    Value(finalCategory),
-          eventType:   Value(_eventType.name),
-          targetDate:  _eventType != EventType.tally
+          title:      Value(name),
+          subtitle:   noteText.isNotEmpty ? Value(noteText) : const Value.absent(),
+          category:   Value(finalCategory),
+          eventType:  Value(_eventType.name),
+          targetDate: _eventType != EventType.tally
               ? Value<DateTime?>(_selectedDate)
               : const Value<DateTime?>(null),
-          colorValue:  Value(_colorValue),
-          photoPath:   _imagePath != null ? Value(_imagePath!) : const Value.absent(),
+          colorValue: Value(_colorValue),
+          photoPath:  _imagePath != null ? Value(_imagePath!) : const Value.absent(),
           resetPeriod: _eventType == EventType.tally
               ? Value(_resetPeriod.name)
+              : const Value.absent(),
+          // Store repeatPeriod only when a real repeat was chosen.
+          // 'never' is represented as NULL so the repeat query can filter
+          // efficiently with isNotNull().
+          repeatPeriod: (_eventType != EventType.tally &&
+                  _repeatOption != RepeatOption.never)
+              ? Value(_repeatOption.name)
               : const Value.absent(),
         ),
       );
@@ -477,6 +484,7 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
               onRepeatTap:  _showRepeatPicker,
               imagePath:    _imagePath,
               onImageTap:   _pickImage,
+              showRepeat:   false,
             ),
       };
     }
@@ -500,6 +508,7 @@ class _NewEventScreenState extends ConsumerState<NewEventScreen> {
             onRepeatTap:  _showRepeatPicker,
             imagePath:    _imagePath,
             onImageTap:   _pickImage,
+            showRepeat:   _isCountingDown, // countup and tally never repeat
           ),
       _ => StepReminder(
             isCountingDown: _isCountingDown,

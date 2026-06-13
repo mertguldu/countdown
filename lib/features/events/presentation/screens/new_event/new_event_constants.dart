@@ -1,6 +1,9 @@
 // new_event_constants.dart
 import 'package:flutter/material.dart';
-import '../../../domain/event.dart'; 
+import '../../../domain/event.dart';
+
+// RepeatOption enum lives in domain/event.dart (it needs to be accessible
+// from the repository layer). Re-exported implicitly via the import above.
 
 class EventTypeOption {
   final EventType type;
@@ -24,18 +27,6 @@ enum Reminder {
   custom('Custom…');
 
   const Reminder(this.label);
-  final String label;
-}
-
-enum RepeatOption {
-  never('Never'),
-  daily('Daily'),
-  weekly('Weekly'),
-  biweekly('Every 2 weeks'),
-  monthly('Monthly'),
-  yearly('Yearly');
-
-  const RepeatOption(this.label);
   final String label;
 }
 

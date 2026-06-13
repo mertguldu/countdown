@@ -59,7 +59,18 @@ class TallyListItem extends StatelessWidget {
                   style: AppTextStyles.titleMedium.copyWith(color: onSurf),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                )
+                ),// Only show the subtitle line if it actually exists and isn't empty
+                  if (event.subtitle != null && event.subtitle!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      event.subtitle!,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: mutedClr,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                ],
               ],
             ),
           ),

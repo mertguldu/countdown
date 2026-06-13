@@ -11,7 +11,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openDatabase());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -25,6 +25,10 @@ class AppDatabase extends _$AppDatabase {
         // resetPeriod, lastResetAt.
         await migrator.deleteTable('events');
         await migrator.createTable(events);
+      }
+      if (from < 4) {
+        // v3 → v4: add repeatPeriod for countdown / count-up recurrence.
+        await migrator.addColumn(events, events.repeatPeriod);
       }
     },
   );

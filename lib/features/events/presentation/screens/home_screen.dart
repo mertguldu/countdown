@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/router/app_router.dart';
+import '../../../../core/services/notification_service.dart';
+import '../../../events/data/event_repository.dart';
 import '../../../events/domain/event.dart';
 import '../../../events/presentation/providers/events_provider.dart';
 import '../../../events/presentation/screens/events_screen.dart';
@@ -25,12 +28,14 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   HomeTab _activeTab = HomeTab.events;
   bool _isEditing = false;
   EditTab _editTab = EditTab.active;
 
   late final PageController _pageController;
+  Timer? _repeatTimer;
 
   static const double _stackHeight = 122;
 
@@ -38,12 +43,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    WidgetsBinding.instance.addObserver(this);
+    _runBackgroundTasks();
+    // Poll once per minute so repeating events that expire while the app is
+    // open get advanced without requiring a cold restart.
+    _repeatTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _runBackgroundTasks(),
+    );
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _repeatTimer?.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _runBackgroundTasks();
+  }
+
+  // ── Background tasks ────────────────────────────────────────────────────────
+
+  /// Runs on cold start, app resume, and every 60 seconds while active.
+  /// Keeps tally auto-resets and repeating countdown events up to date
+  /// regardless of which tab the user is on.
+  Future<void> _runBackgroundTasks() async {
+    if (!mounted) return;
+    final repo = ref.read(eventRepositoryProvider);
+
+    // ── Tally auto-resets ────────────────────────────────────────────────────
+    final tallies = await repo.watchByType(EventType.tally).first;
+    if (tallies.isNotEmpty) await repo.processAutoResets(tallies);
+
+    // ── Repeating countdown events ───────────────────────────────────────────
+    final repeatable = await repo.fetchAllRepeatable();
+    if (repeatable.isEmpty) return;
+
+    final updated = await repo.processRepeats(repeatable);
+    for (final u in updated) {
+      await NotificationService.cancel(u.id);
+      final notifDate = u.newDate.subtract(const Duration(days: 1));
+      if (notifDate.isAfter(DateTime.now())) {
+        await NotificationService.schedule(
+          id:            u.id,
+          title:         u.title,
+          body:          '"${u.title}" is tomorrow!',
+          scheduledDate: notifDate,
+          payload:       u.id.toString(),
+        );
+      }
+    }
   }
 
   // ── Tab switching ───────────────────────────────────────────────────────────

@@ -43,6 +43,26 @@ extension ResetPeriodX on ResetPeriod {
             orElse: () => ResetPeriod.never);
 }
 
+// ── Repeat period (countdown / count-up recurrence) ──────────────────────────
+
+enum RepeatOption { never, daily, weekly, biweekly, monthly, yearly }
+
+extension RepeatOptionX on RepeatOption {
+  String get label => switch (this) {
+        RepeatOption.never    => 'Never',
+        RepeatOption.daily    => 'Daily',
+        RepeatOption.weekly   => 'Weekly',
+        RepeatOption.biweekly => 'Every 2 weeks',
+        RepeatOption.monthly  => 'Monthly',
+        RepeatOption.yearly   => 'Yearly',
+      };
+
+  static RepeatOption fromDb(String? v) => v == null
+      ? RepeatOption.never
+      : RepeatOption.values.firstWhere((e) => e.name == v,
+            orElse: () => RepeatOption.never);
+}
+
 // ── Drift table definition ────────────────────────────────────────────────────
 
 @DataClassName('Event')
@@ -63,6 +83,11 @@ class Events extends Table {
       integer().withDefault(const Constant(0xFF5C6BC0))();
   TextColumn get photoPath  => text().nullable()();
   IntColumn get sortOrder   => integer().withDefault(const Constant(0))();
+
+  // ── Countdown / count-up only ─────────────────────────────────────────────
+  /// 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'
+  /// Null / absent means RepeatOption.never — we never store the string 'never'.
+  TextColumn get repeatPeriod => text().nullable()();
 
   // ── Tally-only ───────────────────────────────────────────────────────────
   IntColumn    get tallyCount  => integer().withDefault(const Constant(0))();

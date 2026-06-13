@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../../../core/theme/app_text_styles.dart';
+import '../../../../domain/event.dart';          // ← RepeatOption now lives here
 import '../new_event_constants.dart';
 import '../new_event_shared_widgets.dart';
 
@@ -8,13 +9,14 @@ class StepDetails extends StatelessWidget {
   const StepDetails({
     super.key, required this.noteCtrl, required this.locationCtrl,
     required this.repeatOption, required this.onRepeatTap,
-    required this.onImageTap, this.imagePath,
+    required this.onImageTap, this.imagePath, this.showRepeat = true,
   });
 
   final TextEditingController noteCtrl, locationCtrl;
   final RepeatOption repeatOption;
   final VoidCallback onRepeatTap, onImageTap;
   final String? imagePath;
+  final bool showRepeat;
 
   @override
   Widget build(BuildContext context) {
@@ -95,18 +97,19 @@ class StepDetails extends StatelessWidget {
               maxLines: 1,
             ),
           ),
-          DetailField(
-            label: 'Repeat',
-            onTap: onRepeatTap,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(repeatOption.label, style: AppTextStyles.bodyLarge.copyWith(color: muted)),
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_right, size: 16, color: muted.withValues(alpha: 0.5)),
-              ],
+          if (showRepeat)
+            DetailField(
+              label: 'Repeat',
+              onTap: onRepeatTap,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(repeatOption.label, style: AppTextStyles.bodyLarge.copyWith(color: muted)),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, size: 16, color: muted.withValues(alpha: 0.5)),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 32),
         ],
       ),

@@ -57,20 +57,29 @@ class StepTallyReset extends StatelessWidget {
                           color: isSel ? onSurf : muted.withValues(alpha: 0.38), width: 1.5,
                         ),
                       ),
-                      child: isSel ? Center(child: Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: onSurf))) : null,
+                      child: isSel
+                          ? Center(
+                              child: Container(
+                                  width: 10, height: 10,
+                                  decoration: BoxDecoration(shape: BoxShape.circle, color: onSurf)))
+                          : null,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(period.name, // Adjust if your ResetPeriod enum has custom labels
-                              style: AppTextStyles.bodyLarge.copyWith(color: onSurf)),
+                          Text(
+                            period.pickerLabel,
+                            style: AppTextStyles.bodyLarge.copyWith(color: onSurf),
+                          ),
                           if (period != ResetPeriod.never)
                             Padding(
                               padding: const EdgeInsets.only(top: 2),
-                              child: Text(period.name, // Adjust if needed
-                                  style: AppTextStyles.bodyMedium.copyWith(color: muted)),
+                              child: Text(
+                                period.displayLabel,
+                                style: AppTextStyles.bodyMedium.copyWith(color: muted),
+                              ),
                             ),
                         ],
                       ),

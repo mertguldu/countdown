@@ -1,6 +1,7 @@
 // new_event_shared_widgets.dart
 import 'package:flutter/material.dart';
 import '../../../../../core/theme/app_text_styles.dart';
+import '../../../domain/event.dart';        // ← RepeatOption now lives here
 import 'new_event_constants.dart';
 
 class NavBar extends StatelessWidget {

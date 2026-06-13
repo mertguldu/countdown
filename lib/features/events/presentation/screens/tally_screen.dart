@@ -15,6 +15,9 @@ import '../widgets/lists/tally_list_item.dart';
 /// Normal mode: respects [TallyViewMode] — Category (grouped) or All (flat,
 /// newest first). Edit mode: Category view supports drag-to-reorder; All view
 /// shows a flat deletable list (no reorder).
+///
+/// Auto-resets are now handled centrally in HomeScreen so they fire regardless
+/// of which tab the user is on.
 class TallyScreen extends ConsumerStatefulWidget {
   const TallyScreen({super.key, this.isEditing = false});
   final bool isEditing;
@@ -33,7 +36,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
   @override
   void initState() {
     super.initState();
-    _runAutoResets();
     if (widget.isEditing) _scheduleEditInit();
   }
 
@@ -48,14 +50,6 @@ class _TallyScreenState extends ConsumerState<TallyScreen> {
   void dispose() {
     _flatSub?.close();
     super.dispose();
-  }
-
-  // ── Auto-reset ────────────────────────────────────────────────────────────
-
-  Future<void> _runAutoResets() async {
-    final repo   = ref.read(eventRepositoryProvider);
-    final events = await repo.watchByType(EventType.tally).first;
-    await repo.processAutoResets(events);
   }
 
   // ── Edit-mode init ────────────────────────────────────────────────────────
