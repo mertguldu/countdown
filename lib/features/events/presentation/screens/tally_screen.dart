@@ -280,7 +280,8 @@ class _TallyList extends StatelessWidget {
   Widget build(BuildContext context) {
     final entries = grouped.entries.toList();
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 8, bottom: 120),
+      padding: EdgeInsets.only(
+        top: 8, bottom: MediaQuery.of(context).padding.bottom),
       itemCount: entries.length,
       itemBuilder: (ctx, i) {
         final cat    = entries[i].key;
@@ -319,7 +320,8 @@ class _FlatTallyList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView.separated(
-    padding: const EdgeInsets.only(top: 8, bottom: 120),
+    padding: EdgeInsets.only(
+      top: 8, bottom: MediaQuery.of(context).padding.bottom),
     itemCount: events.length,
     separatorBuilder: (_, _) => const _Divider(),
     itemBuilder: (ctx, i) => TallyListItem(
@@ -345,7 +347,8 @@ class _FlatTallyEditView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (events.isEmpty) return const _EmptyState();
     return ListView.separated(
-      padding: const EdgeInsets.only(top: 8, bottom: 120),
+      padding: EdgeInsets.only(
+        top: 8, bottom: MediaQuery.of(context).padding.bottom),
       itemCount: events.length,
       separatorBuilder: (_, _) => const _Divider(),
       itemBuilder: (ctx, i) => TallyListItem(
@@ -376,6 +379,7 @@ class _GroupedEditView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     final slivers = <Widget>[];
     for (int gi = 0; gi < groups.length; gi++) {
       final capturedGi = gi;
@@ -424,7 +428,8 @@ class _GroupedEditView extends StatelessWidget {
       }
     }
 
-    slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 120)));
+    slivers.add(SliverPadding(
+      padding: EdgeInsets.only(bottom: bottomPadding)));
     return CustomScrollView(slivers: slivers);
   }
 }
