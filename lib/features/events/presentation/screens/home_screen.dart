@@ -49,11 +49,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     HapticFeedback.selectionClick();
     if (_isEditing) _exitEditMode();
     setState(() => _activeTab = tab);
-    _pageController.animateToPage(
-      tab.index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    _pageController.jumpToPage(tab.index);
   }
 
   // ── Edit mode ───────────────────────────────────────────────────────────────
